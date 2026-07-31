@@ -1,0 +1,10 @@
+AlignAfterOpenBracket: BlockIndent
+AlignArrayOfStructures: Left
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+
+AllowShortCaseLabelsOnASingleLine: true
+
+ColumnLimit: 0
+IndentWidth: 4
+BinPackArguments: false
