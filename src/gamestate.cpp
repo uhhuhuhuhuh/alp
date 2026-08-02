@@ -1,6 +1,7 @@
 #include "gamestate.hpp"
 #include "board.hpp"
 #include <cctype>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -98,25 +99,24 @@ std::optional<chess::GameState> chess::fen_parser(std::string_view sv) {
             }
             is_last_space = true;
             continue;
-        } else {
-            is_last_space = false;
-            if (slice_start == -1) {
-                slice_start = i;
-            }
-            size_t next = i + 1;
-            char char_next = ' ';
-            bool slice_end = false;
-            try {
-                char_next = not_board.at(next);
-            } catch (const std::out_of_range &e) {
-                slice_end = true;
-            }
-            if (std::isspace(char_next)) {
-                slice_end = true;
-            }
-            if (!slice_end) {
-                continue;
-            }
+        }
+        is_last_space = false;
+        if (slice_start == -1) {
+            slice_start = i;
+        }
+        size_t next = i + 1;
+        char char_next = ' ';
+        bool slice_end = false;
+        try {
+            char_next = not_board.at(next);
+        } catch (const std::out_of_range &e) {
+            slice_end = true;
+        }
+        if (std::isspace(char_next)) {
+            slice_end = true;
+        }
+        if (!slice_end) {
+            continue;
         }
 
         std::string sub_str = not_board.substr(slice_start, i - slice_start + 1);
@@ -127,8 +127,9 @@ std::optional<chess::GameState> chess::fen_parser(std::string_view sv) {
             break;
         case on_t::castling_rights: {
             for (size_t i = 0; i < sub_str.length(); i++) {
+                char castle_rights = sub_str[i];
                 pos_t pos = 0;
-                switch (c) {
+                switch (castle_rights) {
                 case 'Q':
                     pos = 0;
                     break;
@@ -191,11 +192,11 @@ void chess::ouput_game_state(const GameState &state, std::ostream &out) {
 
     std::string white_castle_rights_str = "";
     const Piece *piece = &state.board[0];
-    if (piece->type == PieceType::rook and piece->color == PieceColor::white) {
+    if (piece->type == PieceType::rook and piece->color == PieceColor::white and piece->can_castle) {
         white_castle_rights_str += "queen, ";
     }
     piece = &state.board[7];
-    if (piece->type == PieceType::rook and piece->color == PieceColor::white) {
+    if (piece->type == PieceType::rook and piece->color == PieceColor::white and piece->can_castle) {
         white_castle_rights_str += "king, ";
     }
     if (white_castle_rights_str.empty()) {
@@ -203,11 +204,11 @@ void chess::ouput_game_state(const GameState &state, std::ostream &out) {
     }
     std::string black_castle_rights_str = "";
     piece = &state.board[56];
-    if (piece->type == PieceType::rook and piece->color == PieceColor::black) {
+    if (piece->type == PieceType::rook and piece->color == PieceColor::black and piece->can_castle) {
         black_castle_rights_str += "queen, ";
     }
     piece = &state.board[63];
-    if (piece->type == PieceType::rook and piece->color == PieceColor::black) {
+    if (piece->type == PieceType::rook and piece->color == PieceColor::black and piece->can_castle) {
         black_castle_rights_str += "king, ";
     }
     if (black_castle_rights_str.empty()) {
