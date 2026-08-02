@@ -23,7 +23,7 @@ struct GameState {
     ActiveColor active_color = ActiveColor::white;
     pos_t en_passant_pos = -1;
     uint32_t halfmove_clock = 0;
-    uint32_t move_count = 0;
+    uint32_t on_move = 0;
 
   public:
     GameState() = default;

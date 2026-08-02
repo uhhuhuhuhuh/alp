@@ -155,7 +155,7 @@ std::optional<chess::GameState> chess::fen_parser(std::string_view sv) {
             state.halfmove_clock = std::stoi(sub_str);
             break;
         case on_t::move_count:
-            state.move_count = std::stoi(sub_str);
+            state.on_move = std::stoi(sub_str);
             break;
         }
         slice_start = -1;
@@ -168,8 +168,8 @@ void chess::ouput_game_state(const GameState &state, std::ostream &out) {
     constexpr std::string_view border = "+-------------------------------+";
     for (rank_t inverted_rank = 0; inverted_rank < 8; inverted_rank++) {
         rank_t rank = 7 - inverted_rank;
-        out << border << '\n';
-        out << "| ";
+        out << "   " << border << '\n';
+        out << rank + 1 << "  | ";
         for (file_t file = 0; file < 8; file++) {
             pos_t pos = rank * 8 + file;
             char as_char = static_cast<char>(state.board[pos].type);
@@ -180,11 +180,38 @@ void chess::ouput_game_state(const GameState &state, std::ostream &out) {
         }
         out << '\n';
     }
-    out << border << '\n';
+    out << "   " << border << '\n';
+    out << "     A   B   C   D   E   F   G   H\n";
 
     out << '\n';
     out << "Active Color: " << active_color_to_str(state.active_color)
-        << " En Passant pos: " << static_cast<int>(state.en_passant_pos)
-        << " Halfmove clock: " << state.halfmove_clock
-        << " Move count: " << state.move_count << '\n';
+        << ", En Passant pos: " << static_cast<int>(state.en_passant_pos)
+        << ", Halfmove clock: " << state.halfmove_clock
+        << ", On Move: " << state.on_move << '\n';
+
+    std::string white_castle_rights_str = "";
+    const Piece *piece = &state.board[0];
+    if (piece->type == PieceType::rook and piece->color == PieceColor::white) {
+        white_castle_rights_str += "queen, ";
+    }
+    piece = &state.board[7];
+    if (piece->type == PieceType::rook and piece->color == PieceColor::white) {
+        white_castle_rights_str += "king, ";
+    }
+    if (white_castle_rights_str.empty()) {
+        white_castle_rights_str = "none, ";
+    }
+    std::string black_castle_rights_str = "";
+    piece = &state.board[56];
+    if (piece->type == PieceType::rook and piece->color == PieceColor::black) {
+        black_castle_rights_str += "queen, ";
+    }
+    piece = &state.board[63];
+    if (piece->type == PieceType::rook and piece->color == PieceColor::black) {
+        black_castle_rights_str += "king, ";
+    }
+    if (black_castle_rights_str.empty()) {
+        black_castle_rights_str = "none, ";
+    }
+    out << "Castle Rights: White: " << white_castle_rights_str << "Black: " << black_castle_rights_str << '\n';
 }
