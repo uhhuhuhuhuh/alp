@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string>
 
 namespace chess {
 // An enum used to designate the type of a piece
@@ -14,12 +15,19 @@ enum class PieceType : char {
     king = 'k',
 };
 
-// An enum used to designate the color of a piece
+// An enum used to designate the color of a piece and a game's active color
 enum class PieceColor : char {
     none,
     white = 'w',
     black = 'b'
 };
+
+inline std::string piece_color_to_str(PieceColor pc) {
+    if (pc == PieceColor::white) {
+        return "white";
+    }
+    return "black";
+}
 
 // A struct used to contain the essential data of a chess piece including its type and color
 struct Piece {

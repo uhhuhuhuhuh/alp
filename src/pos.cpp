@@ -1,4 +1,5 @@
 #include "pos.hpp"
+#include <string>
 
 chess::pos_t chess::parse_pos(std::string_view sv) {
     if (sv.length() != 2) {
@@ -16,4 +17,14 @@ chess::pos_t chess::parse_pos(std::string_view sv) {
         return -1;
     }
     return pos;
+}
+
+std::string chess::pos_format(pos_t pos) {
+    if (pos < 0 || pos > 63) {
+        return std::to_string(pos);
+    }
+    std::string str = "  ";
+    str[0] = pos % 8 + 'a';
+    str[1] = pos / 8 + '1';
+    return str;
 }
