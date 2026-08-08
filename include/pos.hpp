@@ -13,6 +13,7 @@ using file_t = int;
 pos_t parse_pos(std::string_view sv);
 
 // returns a formated position as a string. ex pos: 12 returns e2
-// if the position is out of bounds (pos < 0 or pos >= 64) the function returns the number pos is storing as a string.
+// if the position is out of bounds (pos < 0 or pos >= 64) the function returns the number pos is
+// storing as a string.
 std::string pos_format(pos_t pos);
 } // namespace chess

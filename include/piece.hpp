@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <string>
 
 namespace chess {
@@ -16,14 +15,13 @@ enum class PieceType : char {
 };
 
 // An enum used to designate the color of a piece and a game's active color
-enum class PieceColor : char {
-    none,
-    white = 'w',
-    black = 'b'
+enum class Color {
+    white,
+    black,
 };
 
-inline std::string piece_color_to_str(PieceColor pc) {
-    if (pc == PieceColor::white) {
+inline std::string piece_color_to_str(Color pc) {
+    if (pc == Color::white) {
         return "white";
     }
     return "black";
@@ -33,18 +31,14 @@ inline std::string piece_color_to_str(PieceColor pc) {
 struct Piece {
   public:
     PieceType type;
-    PieceColor color;
+    Color color;
     bool can_castle;
 
   public:
     // Default piece constructor
-    inline Piece()
-        : type(PieceType::none), color(PieceColor::none), can_castle(false) {}
+    inline Piece() : type(PieceType::none), color(Color::white), can_castle(false) {}
     // Piece constructor
-    inline Piece(PieceType type_, PieceColor color_, bool can_castle_ = false)
+    inline Piece(PieceType type_, Color color_, bool can_castle_ = false)
         : type(type_), color(color_), can_castle(can_castle_) {}
 };
-
-// A 64 long (8x8) array which stores pieces
-using board_t = std::array<Piece, 64>;
 } // namespace chess

@@ -12,7 +12,7 @@ chess::pos_t chess::parse_pos(std::string_view sv) {
         return -1;
     }
     if (sv[1] >= '1' && sv[1] <= '8') {
-        pos += 8 * (sv[1] - '0');
+        pos += 8 * (sv[1] - '1');
     } else {
         return -1;
     }

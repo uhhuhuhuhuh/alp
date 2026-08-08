@@ -1,6 +1,6 @@
 #pragma once
 
-#include "board.hpp"
+#include "piece.hpp"
 #include "pos.hpp"
 
 namespace chess {

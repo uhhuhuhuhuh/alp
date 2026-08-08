@@ -10,5 +10,17 @@ set(CMAKE_CXX_FLAGS "-Wall -Werror -pedantic")
 project(alp)
 
 file(GLOB_RECURSE SRC_FILES src/*.cpp)
-add_executable(alp ${SRC_FILES})
-target_include_directories(alp PRIVATE include/)
+list(FILTER SRC_FILES EXCLUDE REGEX ".*/main\\.cpp$")
+add_library(core ${SRC_FILES})
+target_include_directories(core PUBLIC include/)
+
+add_executable(alp src/main.cpp)
+target_link_libraries(alp PRIVATE core)
+
+option(BUILD_GMAGIC "Build the gmagicattacks tool" OFF)
+if (BUILD_GMAGIC)
+    add_executable(gmagicattacks
+        tools/gmagicattacks/gmagicattacks.cpp
+    )
+    target_link_libraries(gmagicattacks PRIVATE core)
+endif()
