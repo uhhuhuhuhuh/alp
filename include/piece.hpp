@@ -15,13 +15,20 @@ enum class PieceType : char {
 };
 
 // An enum used to designate the color of a piece and a game's active color
-enum class Color {
+enum class Color : bool {
     white,
     black,
 };
 
-inline std::string piece_color_to_str(Color pc) {
-    if (pc == Color::white) {
+inline Color operator!(Color color) {
+    if (color == Color::white) {
+        return Color::black;
+    }
+    return Color::white;
+}
+
+inline std::string color_to_str(Color color) {
+    if (color == Color::white) {
         return "white";
     }
     return "black";
@@ -32,13 +39,12 @@ struct Piece {
   public:
     PieceType type;
     Color color;
-    bool can_castle;
 
   public:
     // Default piece constructor
-    inline Piece() : type(PieceType::none), color(Color::white), can_castle(false) {}
+    inline Piece() : type(PieceType::none), color(Color::white) {}
     // Piece constructor
     inline Piece(PieceType type_, Color color_, bool can_castle_ = false)
-        : type(type_), color(color_), can_castle(can_castle_) {}
+        : type(type_), color(color_) {}
 };
 } // namespace chess

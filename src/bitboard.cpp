@@ -1,6 +1,6 @@
 #include "bitboard.hpp"
 #include "constbb.hpp"
-#include "pos.hpp"
+#include "square.hpp"
 
 #include <ostream>
 
@@ -12,8 +12,8 @@ void bb::out_bitboard(U64 bitboard, std::ostream &out) {
         rank_t rank = 7 - irank;
         out << rank + 1 << "  ";
         for (file_t file = 0; file < 8; file++) {
-            pos_t pos = rank * 8 + file;
-            if (bitboard & (1ULL << pos)) {
+            sqr_t sqr = rank * 8 + file;
+            if (bitboard & (1ULL << sqr)) {
                 out << "1 ";
                 continue;
             }
@@ -25,17 +25,17 @@ void bb::out_bitboard(U64 bitboard, std::ostream &out) {
     out << "   A B C D E F G H\n";
 }
 
-bb::U64 bb::get_bishop_attack(pos_t pos, U64 occ) {
-    occ &= bishop_tbl[pos].mask;
-    occ *= bishop_tbl[pos].magic;
+bb::U64 bb::get_bishop_attack(sqr_t sqr, U64 occ) {
+    occ &= bishop_tbl[sqr].mask;
+    occ *= bishop_tbl[sqr].magic;
     occ >>= (64 - BISHOP_IDX_BITS);
-    return bishop_attacks[pos][occ];
+    return bishop_attacks[sqr][occ];
 }
-bb::U64 bb::get_rook_attack(pos_t pos, U64 occ) {
-    occ &= rook_tbl[pos].mask;
-    occ *= rook_tbl[pos].magic;
+bb::U64 bb::get_rook_attack(sqr_t sqr, U64 occ) {
+    occ &= rook_tbl[sqr].mask;
+    occ *= rook_tbl[sqr].magic;
     occ >>= (64 - ROOK_IDX_BITS);
-    return rook_attacks[pos][occ];
+    return rook_attacks[sqr][occ];
 }
 
 void bb::PieceBB::reset_every_type(Color color) {

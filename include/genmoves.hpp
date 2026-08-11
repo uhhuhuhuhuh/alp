@@ -1,17 +1,21 @@
 #pragma once
 
-#include "gamestate.hpp"
-#include "pos.hpp"
+#include "position.hpp"
+#include "square.hpp"
 
 #include <vector>
+
 namespace chess {
-void gen_pawn_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-void gen_knight_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-void gen_bishop_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-void gen_rook_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-void gen_queen_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-void gen_king_moves(const GameState &state, pos_t pos, std::vector<Move> &moves);
-// Appends all legal moves for the active color from 'pos' to 'moves'.
+// returns a bitboard of pieces attacking the king
+bb::U64 attack_bb_to_king(const Position &pos, Color checked_side);
+
+void gen_pawn_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+void gen_knight_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+void gen_bishop_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+void gen_rook_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+void gen_queen_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+void gen_king_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
+// Appends all legal moves for the active color 'moves'.
 // Does not clear 'moves'.
-void gen_legal_moves(const GameState &state, std::vector<Move> &moves);
+void gen_legal_moves(Position &pos, std::vector<Move> &moves);
 } // namespace chess

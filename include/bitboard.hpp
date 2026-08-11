@@ -2,7 +2,7 @@
 
 #include "constbb.hpp"
 #include "piece.hpp"
-#include "pos.hpp"
+#include "square.hpp"
 
 #include <cstdint>
 
@@ -12,8 +12,8 @@ using BBColorArray = ColorArray<U64>;
 
 void out_bitboard(U64 bitboard, std::ostream &out);
 
-U64 get_bishop_attack(pos_t pos, U64 occ);
-U64 get_rook_attack(pos_t pos, U64 occ);
+U64 get_bishop_attack(sqr_t sqr, U64 occ);
+U64 get_rook_attack(sqr_t sqr, U64 occ);
 
 class PieceBB {
   private:

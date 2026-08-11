@@ -1,17 +1,15 @@
 #pragma once
 
-#include "piece.hpp"
-#include "pos.hpp"
+#include "square.hpp"
 
 namespace chess {
 struct Move {
   public:
-    pos_t from;
-    pos_t to;
-    Piece to_piece;
+    sqr_t from;
+    sqr_t to;
 
   public:
     Move() : from(-1), to(-1) {};
-    Move(pos_t from_, pos_t to_) : from(from_), to(to_) {};
+    Move(sqr_t from_, sqr_t to_) : from(from_), to(to_) {};
 };
 } // namespace chess
