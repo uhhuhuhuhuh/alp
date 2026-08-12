@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string>
-
 namespace chess {
 // An enum used to designate the type of a piece
 enum class PieceType : char {
@@ -20,18 +18,12 @@ enum class Color : bool {
     black,
 };
 
+// returns the opposite color.
 inline Color operator!(Color color) {
     if (color == Color::white) {
         return Color::black;
     }
     return Color::white;
-}
-
-inline std::string color_to_str(Color color) {
-    if (color == Color::white) {
-        return "white";
-    }
-    return "black";
 }
 
 // A struct used to contain the essential data of a chess piece including its type and color

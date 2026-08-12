@@ -28,14 +28,14 @@ void bb::out_bitboard(U64 bitboard, std::ostream &out) {
 bb::U64 bb::get_bishop_attack(sqr_t sqr, U64 occ) {
     occ &= bishop_tbl[sqr].mask;
     occ *= bishop_tbl[sqr].magic;
-    occ >>= (64 - BISHOP_IDX_BITS);
-    return bishop_attacks[sqr][occ];
+    occ >>= (64 - bishop_bit_idxs[sqr]);
+    return bishop_attacks[bishop_offsets[sqr] + occ];
 }
 bb::U64 bb::get_rook_attack(sqr_t sqr, U64 occ) {
     occ &= rook_tbl[sqr].mask;
     occ *= rook_tbl[sqr].magic;
-    occ >>= (64 - ROOK_IDX_BITS);
-    return rook_attacks[sqr][occ];
+    occ >>= (64 - rook_bit_idxs[sqr]);
+    return rook_attacks[rook_offsets[sqr] + occ];
 }
 
 void bb::PieceBB::reset_every_type(Color color) {

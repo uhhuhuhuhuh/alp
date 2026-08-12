@@ -60,6 +60,7 @@ struct Position {
     Position() = default;
 };
 
+// outputs the given position in FEN notation
 void output_pos_as_fen(const Position &pos, std::ostream &out);
 
 // The starting position in FEN notation

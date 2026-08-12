@@ -1,16 +1,44 @@
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string_view>
-#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "bitboard.hpp"
 #include "constbb.hpp"
-#include "pos.hpp"
+#include "square.hpp"
 
 namespace bb = chess::bb;
 using namespace chess;
+
+constexpr std::size_t get_bishop_attacks_size() {
+    std::size_t size = 0;
+    for (size_t i = 0; i < bb::bishop_bit_idxs.size(); i++) {
+        size += (1ULL << bb::bishop_bit_idxs[i]);
+    }
+    return size;
+}
+constexpr std::size_t bishop_attacks_size = get_bishop_attacks_size();
+
+constexpr std::size_t get_rook_attacks_size() {
+    std::size_t size = 0;
+    for (size_t i = 0; i < bb::rook_bit_idxs.size(); i++) {
+        size += (1ULL << bb::rook_bit_idxs[i]);
+    }
+    return size;
+}
+constexpr std::size_t rook_attacks_size = get_rook_attacks_size();
+
+template <std::size_t size> struct Attacks {
+    std::array<bb::U64, size> data{};
+    std::array<size_t, 64> offsets{};
+    Attacks() = default;
+};
 
 bb::ColorArray<std::array<bb::U64, 64>> get_pawn_attacks() {
     bb::ColorArray<std::array<bb::U64, 64>> pawn_attacks{};
@@ -66,11 +94,11 @@ std::array<bb::U64, 64> get_knight_attacks() {
     return knight_attacks;
 }
 
-bb::U64 bishop_rays(bb::U64 occ, pos_t pos) {
+bb::U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
     bb::U64 bb = 0ULL;
 
-    rank_t t_rank = pos / 8;
-    file_t t_file = pos % 8;
+    rank_t t_rank = sqr / 8;
+    file_t t_file = sqr % 8;
     rank_t rank = 0;
     file_t file = 0;
 
@@ -106,11 +134,11 @@ bb::U64 bishop_rays(bb::U64 occ, pos_t pos) {
     return bb;
 }
 
-bb::U64 rook_rays(bb::U64 occ, pos_t pos) {
+bb::U64 rook_rays(bb::U64 occ, sqr_t sqr) {
     bb::U64 bb = 0ULL;
 
-    rank_t t_rank = pos / 8;
-    file_t t_file = pos % 8;
+    rank_t t_rank = sqr / 8;
+    file_t t_file = sqr % 8;
     rank_t rank = 0;
     file_t file = 0;
 
@@ -146,26 +174,24 @@ bb::U64 rook_rays(bb::U64 occ, pos_t pos) {
     return bb;
 }
 
-bb::U64 xorshift64star(bb::U64 &x) {
+inline bb::U64 xorshift64star(bb::U64 &x) {
     x ^= x >> 12;
     x ^= x << 25;
     x ^= x >> 27;
     return x * 0x2545F4914F6CDD1DULL;
 }
 
-bool is_magic_valid(
-    bb::U64 occ, pos_t pos, std::unordered_map<std::size_t, bb::U64> &attacks, bb::U64 attack_bb
-) {
-    return attacks.contains(occ) && attacks[occ] != attack_bb;
-}
+struct SeenAttackBB{
+    bb::U64 attack = 0ULL;
+    uint32_t gen = 0;
+    SeenAttackBB() = default;
+};
 
 template <typename ray_t, std::size_t size>
 bb::U64 find_magic(
-    bb::U64 mask, bb::U64 bit_idx, pos_t pos, bb::U64 &seed,
-    std::array<std::array<bb::U64, size>, 64> &attacks, ray_t ray
+    bb::U64 mask, bb::U64 bit_idx, sqr_t sqr, bb::U64 &seed, Attacks<size> &attacks, ray_t ray,
+    size_t &offset
 ) {
-    assert(bit_idx == bb::BISHOP_IDX_BITS || bit_idx == bb::ROOK_IDX_BITS);
-
     const std::size_t table_size = 1ULL << bit_idx;
     std::vector<bb::U64> occupancies;
     std::vector<bb::U64> ray_attacks;
@@ -174,14 +200,16 @@ bb::U64 find_magic(
 
     for (bb::U64 subset = mask;; subset = (subset - 1) & mask) {
         occupancies.push_back(subset);
-        ray_attacks.push_back(ray(subset, pos));
+        ray_attacks.push_back(ray(subset, sqr));
         if (subset == 0) {
             break;
         }
     }
 
+    std::vector<SeenAttackBB> attack_hist(table_size);
+    uint32_t gen = 0;
     while (true) {
-        std::unordered_map<std::size_t, bb::U64> seen;
+        gen++;
         bool valid = true;
         bb::U64 magic = xorshift64star(seed) & xorshift64star(seed) & xorshift64star(seed);
 
@@ -189,12 +217,13 @@ bb::U64 find_magic(
             bb::U64 occ = occupancies[i];
             std::size_t idx = (occ * magic) >> (64 - bit_idx);
 
-            if (!seen.contains(idx)) {
-                seen.insert({idx, ray_attacks[i]});
+            if (attack_hist[idx].gen != gen) {
+                attack_hist[idx].attack = ray_attacks[i];
+                attack_hist[idx].gen = gen;
                 continue;
             }
 
-            if (seen[idx] != ray_attacks[i]) {
+            if (attack_hist[idx].attack != ray_attacks[i]) {
                 valid = false;
                 break;
             }
@@ -206,15 +235,18 @@ bb::U64 find_magic(
         for (std::size_t i = 0; i < occupancies.size(); i++) {
             bb::U64 occ = occupancies[i];
             std::size_t idx = (occ * magic) >> (64 - bit_idx);
-            attacks[pos][idx] = ray_attacks[i];
+            attacks.data[offset + idx] = ray_attacks[i];
         }
+        attacks.offsets[sqr] = offset;
+        offset += (1ULL << bit_idx);
+        std::cout << "hi\n";
         return magic;
     }
 }
 
-std::array<bb::GMagic, 64>
-get_bishop_gmagic(std::array<std::array<bb::U64, bb::BISHOP_ATTACK_ARR_SIZE>, 64> &attacks) {
+std::array<bb::GMagic, 64> get_bishop_gmagic(Attacks<bishop_attacks_size> &attacks) {
     std::array<bb::GMagic, 64> bishop_tbl{};
+    std::size_t offset = 0;
     // a random starting seed
     bb::U64 seed = 578;
 
@@ -236,14 +268,15 @@ get_bishop_gmagic(std::array<std::array<bb::U64, bb::BISHOP_ATTACK_ARR_SIZE>, 64
             mask |= (1ULL << (r * 8 + f));
 
         bishop_tbl[i].mask = mask;
-        bishop_tbl[i].magic = find_magic(mask, bb::BISHOP_IDX_BITS, i, seed, attacks, bishop_rays);
+        bishop_tbl[i].magic =
+            find_magic(mask, bb::bishop_bit_idxs[i], i, seed, attacks, bishop_rays, offset);
     }
     return bishop_tbl;
 }
 
-std::array<bb::GMagic, 64>
-get_rook_gmagic(std::array<std::array<bb::U64, bb::ROOK_ATTACK_ARR_SIZE>, 64> &attacks) {
+std::array<bb::GMagic, 64> get_rook_gmagic(Attacks<rook_attacks_size> &attacks) {
     std::array<bb::GMagic, 64> rook_tbl{};
+    std::size_t offset = 0;
     // a random starting seed
     bb::U64 seed = 43216;
 
@@ -262,7 +295,8 @@ get_rook_gmagic(std::array<std::array<bb::U64, bb::ROOK_ATTACK_ARR_SIZE>, 64> &a
             mask |= (1ULL << (t_rank * 8 + file));
 
         rook_tbl[i].mask = mask;
-        rook_tbl[i].magic = find_magic(mask, bb::ROOK_IDX_BITS, i, seed, attacks, rook_rays);
+        rook_tbl[i].magic =
+            find_magic(mask, bb::rook_bit_idxs[i], i, seed, attacks, rook_rays, offset);
     }
     return rook_tbl;
 }
@@ -312,41 +346,20 @@ void out_gmagic_arr(const std::array<bb::GMagic, 64> &tbl, std::string_view sv_n
     std::cout << "};\n";
 }
 
-template <std::size_t size>
-void out_slide_attack(
-    const std::array<std::array<bb::U64, size>, 64> &arr, std::string_view sv_name
-) {
-    std::cout << "constexpr std::array<std::array<bb::U64, " << size << ">, 64> " << sv_name
-              << " = {\n";
-    for (size_t i = 0; i < arr.size(); i++) {
-        std::cout << "    std::array<U64, " << size << ">{\n";
-        for (size_t j = 0; j < size; j++) {
-            std::cout << "        " << arr[i][j] << "ULL";
-            if (j < size - 1) {
-                std::cout << ",";
-            }
-            std::cout << "\n";
-        }
-        std::cout << "    }";
-        if (i < arr.size() - 1) {
-            std::cout << ",";
-        }
-        std::cout << '\n';
-    }
-    std::cout << "};\n";
-}
-
 int main() {
     auto pawn_attacks = get_pawn_attacks();
     auto knight_attacks = get_knight_attacks();
-    std::array<std::array<bb::U64, bb::BISHOP_ATTACK_ARR_SIZE>, 64> bishop_attacks;
-    std::array<bb::GMagic, 64> bishop_tbl = get_bishop_gmagic(bishop_attacks);
-    std::array<std::array<bb::U64, bb::ROOK_ATTACK_ARR_SIZE>, 64> rook_attacks;
-    std::array<bb::GMagic, 64> rook_tbl = get_rook_gmagic(rook_attacks);
+    Attacks<bishop_attacks_size> bishop_attacks;
+    auto bishop_tbl = get_bishop_gmagic(bishop_attacks);
+    Attacks<rook_attacks_size> rook_attacks;
+    auto rook_tbl = get_rook_gmagic(rook_attacks);
+
     out_color_arr(pawn_attacks, "pawn_attacks");
     out_U64_arr(knight_attacks, "knight_attacks");
     out_gmagic_arr(bishop_tbl, "bishop_tbl");
     out_gmagic_arr(rook_tbl, "rook_tbl");
-    out_slide_attack(bishop_attacks, "bishop_attacks");
-    out_slide_attack(rook_attacks, "rook_attacks");
+    out_U64_arr(bishop_attacks.offsets, "bishop_offsets");
+    out_U64_arr(rook_attacks.offsets, "rook_offsets");
+    out_U64_arr(bishop_attacks.data, "bishop_attacks");
+    out_U64_arr(rook_attacks.data, "rook_attacks");
 }
