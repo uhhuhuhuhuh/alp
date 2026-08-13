@@ -9,7 +9,7 @@
 #include <string>
 
 namespace chess {
-static char castle_rights_to_char(CastleRights &rights) {
+static char castle_rights_to_char(uint32_t &rights) {
     int index = std::countr_zero(static_cast<unsigned int>(rights));
     if (static_cast<std::size_t>(index) < sizeof(unsigned int)) {
         rights &= rights - 1;
@@ -55,27 +55,27 @@ void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
     }
 
     out << ' ';
-    if (pos.state.active_color == Color::white) {
+    if (pos.st->active_color == Color::white) {
         out << 'w';
     } else {
         out << 'b';
     }
 
     out << ' ';
-    CastleRights copy = pos.state.castle_rights;
+    uint32_t copy = pos.st->castle_rights;
     do {
         out << castle_rights_to_char(copy);
     } while (static_cast<unsigned int>(copy) != 0);
 
     out << ' ';
-    if (pos.state.en_passant_sqr == -1) {
+    if (pos.st->en_passant_sqr == -1) {
         out << '-';
     } else {
-        out << sqr_format(pos.state.en_passant_sqr);
+        out << sqr_format(pos.st->en_passant_sqr);
     }
 
-    out << ' ' << pos.state.halfmove_clock;
-    out << ' ' << pos.state.on_move << '\n';
+    out << ' ' << pos.st->halfmove_clock;
+    out << ' ' << pos.st->on_move << '\n';
 }
 
 namespace chess {
@@ -136,18 +136,20 @@ static bool set_castle_rights(Position &pos, const std::string &sub_str) {
         if (pos.board[king_sqr].type != PieceType::king || pos.board[king_sqr].color != color) {
             return true;
         }
-        pos.state.castle_rights |= rights;
+        pos.st->castle_rights |= rights;
     }
     return false;
 }
 } // namespace chess
 
-std::optional<chess::Position> chess::fen_parser(std::string_view sv) {
+std::optional<chess::Position> chess::fen_parser(std::string_view sv, State &st) {
     if (sv.empty()) {
         return {};
     }
 
     Position pos;
+    pos.st = &st;
+
     rank_t rank = 7;
     file_t file = 0;
     std::size_t i;
@@ -263,7 +265,7 @@ std::optional<chess::Position> chess::fen_parser(std::string_view sv) {
             } catch (const std::exception &e) {
                 return {};
             }
-            pos.state.active_color = c == 'w' ? Color::white : Color::black;
+            pos.st->active_color = c == 'w' ? Color::white : Color::black;
             break;
         case on_t::castling_rights: {
             if (set_castle_rights(pos, sub_str)) {
@@ -271,26 +273,25 @@ std::optional<chess::Position> chess::fen_parser(std::string_view sv) {
             }
             break;
         }
-        case on_t::en_passant: pos.state.en_passant_sqr = parse_sqr(sub_str); break;
+        case on_t::en_passant: pos.st->en_passant_sqr = parse_sqr(sub_str); break;
         case on_t::halfmove_clock:
             try {
-                pos.state.halfmove_clock =
-                    std::stoi(sub_str); // comment here cuz clang-format is dumb
+                pos.st->halfmove_clock = std::stoi(sub_str); // comment here cuz clang-format
             } catch (const std::exception &e) {
                 return {};
             }
-            if (pos.state.halfmove_clock > 50) {
+            if (pos.st->halfmove_clock > 50) {
                 return {};
             }
             break;
         case on_t::move_count:
             try {
-                pos.state.on_move = std::stoi(sub_str); // comment here cuz clang-format is dumb
+                pos.st->on_move = std::stoi(sub_str); // comment here cuz clang-format is dumb
             } catch (const std::exception &e) {
                 return {};
             }
             // with a forced 50 move rule 5949 is the longest theoretical game
-            if (pos.state.on_move > 5949) {
+            if (pos.st->on_move > 5949) {
                 return {};
             }
             break;
@@ -356,19 +357,17 @@ static void strip_castle_rights(const Position &pos, State &state, sqr_t sqr) {
 }
 } // namespace chess
 
-void chess::do_move(Position &pos, const Move &move) {
-    State state;
-    state = pos.state;
-    state.en_passant_sqr = -1;
-    state.captured_piece = pos.board[move.to];
-    state.active_color = !pos.state.active_color;
-    state.ply++;
-    if (state.ply % 2 == 0) {
-        state.on_move++;
+void chess::do_move(Position &pos, const Move &move, State &st) {
+    st = *pos.st;
+    st.prev = pos.st;
+    st.en_passant_sqr = -1;
+    st.captured_piece = pos.board[move.to];
+    st.active_color = !pos.st->active_color;
+    st.ply++;
+    if (st.ply % 2 == 0) {
+        st.on_move++;
     }
-    strip_castle_rights(pos, state, move.from);
-
-    pos.history.push_back(pos.state);
+    strip_castle_rights(pos, st, move.from);
 
     Piece &from_piece = pos.board[move.from];
 
@@ -380,7 +379,7 @@ void chess::do_move(Position &pos, const Move &move) {
     const bool is_from_white = from_piece.color == Color::white;
     if (from_piece.type == PieceType::pawn) {
         if (rank_dist == 2) {
-            state.en_passant_sqr = move.to;
+            st.en_passant_sqr = move.to;
         } else if (pos.board[move.to].type == PieceType::none && file_dist == 1) {
             rank_t rank_sign = is_from_white ? 1 : -1;
             sqr_t capture_sqr = move.to + (-8 * rank_sign);
@@ -403,20 +402,20 @@ void chess::do_move(Position &pos, const Move &move) {
     pos.board[move.to] = pos.board[move.from];
     pos.bb.set_and_bitboard(from_piece.type, from_piece.color, ~(1ULL << move.from));
     pos.board[move.from].type = PieceType::none;
-    if (state.captured_piece.type != PieceType::none) {
+    if (st.captured_piece.type != PieceType::none) {
         pos.bb.set_and_bitboard(
-            state.captured_piece.type, state.captured_piece.color, ~(1ULL << move.to)
+            st.captured_piece.type, st.captured_piece.color, ~(1ULL << move.to)
         );
     }
 
-    pos.state = state;
-    pos.state.checks_bb = attacks_to_king(pos, pos.board[move.to].color);
+    pos.st = &st;
+    pos.st->checks_bb = attacks_to_king(pos, !pos.board[move.to].color);
 }
 
 void chess::undo_move(Position &pos, const Move &move) {
     Piece &to_piece = pos.board[move.to];
 
-    Piece captured = pos.state.captured_piece;
+    Piece captured = pos.st->captured_piece;
 
     rank_t from_file = move.from % 8;
     rank_t to_file = move.to % 8;
@@ -454,8 +453,7 @@ void chess::undo_move(Position &pos, const Move &move) {
         pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
     }
 
-    pos.state = pos.history.back();
-    pos.history.pop_back();
+    pos.st = pos.st->prev;
 }
 
 namespace chess {
@@ -491,9 +489,10 @@ static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, st
     }
 
     uint64_t move_count = 0;
+    State st;
     for (const Move &move : moves) {
         out << indent << "done move: " << sqr_format(move.from) << sqr_format(move.to) << '\n';
-        do_move(pos, move);
+        do_move(pos, move, st);
         move_count += perft_out_helper(pos, depth + 1, max, out);
         undo_move(pos, move);
     }
@@ -514,8 +513,9 @@ uint64_t chess::perft(Position &state, uint32_t depth) {
     }
 
     uint64_t move_count = 0;
+    State st;
     for (Move move : moves) {
-        do_move(state, move);
+        do_move(state, move, st);
         move_count += perft(state, depth - 1);
         undo_move(state, move);
     }

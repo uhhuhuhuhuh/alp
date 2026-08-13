@@ -7,6 +7,7 @@
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 
 chess::bb::U64 chess::attacks_to_sqr(const Position &pos, sqr_t sqr, Color color) {
     Color enemy = !color;
@@ -84,7 +85,7 @@ static bool is_pawn_move_legal(Position &pos, Move &move) {
     if (file_dist == 1) {
         sqr_t en_passant_sqr = move.to + (rank_sign * -8);
         if (to_piece.type == PieceType::none && rank_dist == 1 &&
-            en_passant_sqr != pos.state.en_passant_sqr) {
+            en_passant_sqr != pos.st->en_passant_sqr) {
             return false;
         }
     } else {
@@ -105,7 +106,8 @@ static bool is_pawn_move_legal(Position &pos, Move &move) {
         // TODO: add promotion
     }
 
-    do_move(pos, move);
+    State st;
+    do_move(pos, move, st);
     bb::U64 attackers = attacks_to_king(pos, from_piece.color);
     undo_move(pos, move);
 
@@ -145,7 +147,8 @@ static bool is_knight_move_legal(Position &pos, Move &move) {
         return false;
     }
 
-    do_move(pos, move);
+    State st;
+    do_move(pos, move, st);
     bb::U64 attackers = attacks_to_king(pos, from_piece.color);
     undo_move(pos, move);
 
@@ -181,7 +184,8 @@ static bool is_king_move_legal(Position &pos, Move &move) {
     }
 
     if (file_dist < 2) {
-        do_move(pos, move);
+        State st;
+        do_move(pos, move, st);
         bb::U64 attackers = attacks_to_king(pos, from_piece.color);
         undo_move(pos, move);
 
@@ -191,7 +195,7 @@ static bool is_king_move_legal(Position &pos, Move &move) {
         return true;
     }
 
-    if (pos.state.checks_bb != 0) {
+    if (pos.st->checks_bb != 0) {
         return false;
     }
 
@@ -200,20 +204,19 @@ static bool is_king_move_legal(Position &pos, Move &move) {
     CastleRights rights =
         queen_side ? (is_from_white ? CastleRights::white_queen : CastleRights::black_queen)
                    : (is_from_white ? CastleRights::white_king : CastleRights::black_king);
-    if (static_cast<uint32_t>(pos.state.castle_rights & (1 << rights)) != 0) {
+    if ((pos.st->castle_rights & rights) == 0) {
         return false;
     }
 
-    sqr_t king_sqr = is_from_white ? e1 : e8;
-    sqr_t rook_sqr = is_from_white ? (queen_side ? a1 : a8) : (queen_side ? h1 : h8);
+    sqr_t rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
     assert(
-        move.from == king_sqr && pos.board[rook_sqr].type == PieceType::rook &&
+        move.from == (is_from_white ? e1 : e8) && pos.board[rook_sqr].type == PieceType::rook &&
         pos.board[rook_sqr].color == from_piece.color
     );
 
     sqr_t step = queen_side ? -1 : 1;
     bool passed_to = false;
-    for (sqr_t sqr = king_sqr + step; sqr != rook_sqr; sqr += step) {
+    for (sqr_t sqr = move.from + step; sqr != rook_sqr; sqr += step) {
         if (pos.board[sqr].type != PieceType::none) {
             return false;
         }
@@ -295,7 +298,8 @@ void chess::gen_bishop_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves)
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        do_move(pos, move);
+        State st;
+        do_move(pos, move, st);
         bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
         undo_move(pos, move);
 
@@ -315,7 +319,8 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        do_move(pos, move);
+        State st;
+        do_move(pos, move, st);
         bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
         undo_move(pos, move);
 
@@ -336,7 +341,8 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) 
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        do_move(pos, move);
+        State st;
+        do_move(pos, move, st);
         bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
         undo_move(pos, move);
 
@@ -357,21 +363,23 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     push_king_move(pos, sqr, sqr - 7, moves);
     push_king_move(pos, sqr, sqr + 9, moves);
     push_king_move(pos, sqr, sqr - 9, moves);
+    push_king_move(pos, sqr, sqr + 2, moves);
+    push_king_move(pos, sqr, sqr - 2, moves);
 }
 
 void chess::gen_legal_moves(Position &pos, std::vector<Move> &moves) {
-    if (std::popcount(pos.state.checks_bb) > 1) {
-        bb::U64 king_bb = pos.bb.get_kings()[pos.state.active_color];
+    if (std::popcount(pos.st->checks_bb) > 1) {
+        bb::U64 king_bb = pos.bb.get_kings()[pos.st->active_color];
         assert(std::popcount(king_bb) == 1);
         gen_king_moves(pos, std::countr_zero(king_bb), moves);
         return;
     }
 
-    bb::U64 occ = pos.bb.get_every_type()[pos.state.active_color];
+    bb::U64 occ = pos.bb.get_every_type()[pos.st->active_color];
     while (occ != 0) {
         size_t i = poplsb(occ);
 
-        if (pos.board[i].color != pos.state.active_color) {
+        if (pos.board[i].color != pos.st->active_color) {
             continue;
         }
         switch (pos.board[i].type) {

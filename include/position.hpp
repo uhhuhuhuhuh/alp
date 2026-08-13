@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace chess {
-enum class CastleRights : uint32_t {
+enum CastleRights : uint32_t {
     none = 0,
     white_queen = 1,
     white_king = 2,
@@ -20,7 +20,7 @@ enum class CastleRights : uint32_t {
     black_king = 8,
 };
 
-inline void operator|=(CastleRights &l, CastleRights r) {
+/* inline void operator|=(CastleRights &l, CastleRights r) {
     l = static_cast<CastleRights>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r));
 }
 
@@ -46,18 +46,20 @@ inline CastleRights operator-(CastleRights l, uint32_t r) {
 
 inline CastleRights operator<<(uint32_t l, CastleRights r) {
     return static_cast<CastleRights>(l << static_cast<uint32_t>(r));
-}
+} */
 
 struct State {
   public:
     Color active_color = Color::white;
-    CastleRights castle_rights = CastleRights::none;
+    uint32_t castle_rights = CastleRights::none;
     Piece captured_piece;
     sqr_t en_passant_sqr = -1;
     bb::U64 checks_bb = 0ULL;
     uint32_t ply = 0;
     uint32_t halfmove_clock = 0;
     uint32_t on_move = 0;
+
+    State *prev = nullptr;
 
   public:
     State() = default;
@@ -69,9 +71,7 @@ struct Position {
     std::array<Piece, 64> board;
     bb::PieceBB bb;
 
-    State state;
-
-    std::vector<State> history;
+    State *st;
 
   public:
     Position() = default;
@@ -86,14 +86,14 @@ constexpr std::string_view starting_pos_fen =
 
 // returns a GameState whose data is constructed off of a string formated in FEN notation
 // returns nothing if the string is not in proper FEN notation
-std::optional<Position> fen_parser(std::string_view sv);
+std::optional<Position> fen_parser(std::string_view sv, State &st);
 
 // ouputs the data in the given Position and prints the board from white's perspective into the
 // given ostream
 void ouput_pos(const Position &pos, std::ostream &out);
 
 // makes a move and flips the active side
-void do_move(Position &pos, const Move &move);
+void do_move(Position &pos, const Move &move, State &st);
 // undoes a move and flips the active side
 void undo_move(Position &pos, const Move &move);
 
