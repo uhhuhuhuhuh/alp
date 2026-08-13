@@ -6,8 +6,10 @@
 #include <vector>
 
 namespace chess {
+// returns a bitboard of pieces attacking the given square
+bb::U64 attacks_to_sqr(const Position &pos, sqr_t sqr, Color attacked_color);
 // returns a bitboard of pieces attacking the king
-bb::U64 attack_bb_to_king(const Position &pos, Color checked_side);
+bb::U64 attacks_to_king(const Position &pos, Color checked_color);
 
 void gen_pawn_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
 void gen_knight_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);

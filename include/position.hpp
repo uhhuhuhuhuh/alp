@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace chess {
-enum class CastleRights : unsigned int {
+enum class CastleRights : uint32_t {
     none = 0,
     white_queen = 1,
     white_king = 2,
@@ -21,15 +21,31 @@ enum class CastleRights : unsigned int {
 };
 
 inline void operator|=(CastleRights &l, CastleRights r) {
-    l = static_cast<CastleRights>(static_cast<uint>(l) | static_cast<uint>(r));
+    l = static_cast<CastleRights>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r));
 }
 
 inline void operator&=(CastleRights &l, CastleRights r) {
-    l = static_cast<CastleRights>(static_cast<uint>(l) & static_cast<uint>(r));
+    l = static_cast<CastleRights>(static_cast<uint32_t>(l) & static_cast<uint32_t>(r));
 }
 
-inline CastleRights operator-(CastleRights l, int r) {
-    return static_cast<CastleRights>(static_cast<uint>(l) - r);
+inline CastleRights operator&(CastleRights l, CastleRights r) {
+    return static_cast<CastleRights>(static_cast<uint32_t>(l) & static_cast<uint32_t>(r));
+}
+
+inline CastleRights operator|(CastleRights l, CastleRights r) {
+    return static_cast<CastleRights>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r));
+}
+
+inline CastleRights operator~(CastleRights l) {
+    return static_cast<CastleRights>(~static_cast<uint32_t>(l));
+}
+
+inline CastleRights operator-(CastleRights l, uint32_t r) {
+    return static_cast<CastleRights>(static_cast<uint32_t>(l) - r);
+}
+
+inline CastleRights operator<<(uint32_t l, CastleRights r) {
+    return static_cast<CastleRights>(l << static_cast<uint32_t>(r));
 }
 
 struct State {
@@ -38,6 +54,7 @@ struct State {
     CastleRights castle_rights = CastleRights::none;
     Piece captured_piece;
     sqr_t en_passant_sqr = -1;
+    bb::U64 checks_bb = 0ULL;
     uint32_t ply = 0;
     uint32_t halfmove_clock = 0;
     uint32_t on_move = 0;

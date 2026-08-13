@@ -1,12 +1,9 @@
-#include <algorithm>
 #include <array>
-#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 #include "bitboard.hpp"
@@ -92,6 +89,35 @@ std::array<bb::U64, 64> get_knight_attacks() {
     }
 
     return knight_attacks;
+}
+
+std::array<bb::U64, 64> get_king_attacks() {
+    std::array<bb::U64, 64> king_attacks{};
+
+    for (std::size_t i = 0; i < 64; i++) {
+        rank_t rank = i / 8;
+        rank_t file = i % 8;
+        constexpr int offsets[][2] = {
+            {1,  1 },
+            {1,  -1},
+            {1,  0 },
+            {0,  1 },
+            {0,  -1},
+            {-1, 0 },
+            {-1, 1 },
+            {-1, -1}
+        };
+
+        for (auto &[dr, df] : offsets) {
+            rank_t new_rank = rank + dr;
+            file_t new_file = file + df;
+
+            if (new_rank >= 0 && new_rank < 8 && new_file >= 0 && new_file < 8) {
+                king_attacks[i] |= 1ULL << (new_rank * 8 + new_file);
+            }
+        }
+    }
+    return king_attacks;
 }
 
 bb::U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
@@ -181,7 +207,7 @@ inline bb::U64 xorshift64star(bb::U64 &x) {
     return x * 0x2545F4914F6CDD1DULL;
 }
 
-struct SeenAttackBB{
+struct SeenAttackBB {
     bb::U64 attack = 0ULL;
     uint32_t gen = 0;
     SeenAttackBB() = default;
@@ -239,7 +265,6 @@ bb::U64 find_magic(
         }
         attacks.offsets[sqr] = offset;
         offset += (1ULL << bit_idx);
-        std::cout << "hi\n";
         return magic;
     }
 }
@@ -353,6 +378,7 @@ int main() {
     auto bishop_tbl = get_bishop_gmagic(bishop_attacks);
     Attacks<rook_attacks_size> rook_attacks;
     auto rook_tbl = get_rook_gmagic(rook_attacks);
+    auto king_attacks = get_king_attacks();
 
     out_color_arr(pawn_attacks, "pawn_attacks");
     out_U64_arr(knight_attacks, "knight_attacks");
@@ -362,4 +388,5 @@ int main() {
     out_U64_arr(rook_attacks.offsets, "rook_offsets");
     out_U64_arr(bishop_attacks.data, "bishop_attacks");
     out_U64_arr(rook_attacks.data, "rook_attacks");
+    out_U64_arr(king_attacks, "king_attacks");
 }

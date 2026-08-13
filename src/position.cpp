@@ -3,7 +3,7 @@
 #include "piece.hpp"
 #include "square.hpp"
 #include <cctype>
-#include <iostream>
+#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -101,22 +101,22 @@ static bool set_castle_rights(Position &pos, const std::string &sub_str) {
         switch (c) {
         case 'Q':
             rights = CastleRights::white_queen;
-            sqr = 0;
+            sqr = a1;
             color = Color::white;
             break;
         case 'K':
             rights = CastleRights::white_king;
-            sqr = 7;
+            sqr = h1;
             color = Color::white;
             break;
         case 'q':
             rights = CastleRights::black_queen;
-            sqr = 56;
+            sqr = a8;
             color = Color::black;
             break;
         case 'k':
             rights = CastleRights::black_king;
-            sqr = 63;
+            sqr = h8;
             color = Color::black;
             break;
         case '-': break;
@@ -323,43 +323,133 @@ void chess::ouput_pos(const Position &pos, std::ostream &out) {
     output_pos_as_fen(pos, out);
 }
 
+namespace chess {
+static void strip_castle_rights(const Position &pos, State &state, sqr_t sqr) {
+    PieceType type = pos.board[sqr].type;
+    Color color = pos.board[sqr].color;
+
+    if (sqr == a1 && type == PieceType::rook && color == Color::white) {
+        state.castle_rights &= ~CastleRights::white_queen;
+        return;
+    }
+    if (sqr == h1 && type == PieceType::rook && color == Color::white) {
+        state.castle_rights &= ~CastleRights::white_king;
+        return;
+    }
+    if (sqr == e1 && type == PieceType::king && color == Color::white) {
+        state.castle_rights &= ~(CastleRights::white_queen | CastleRights::white_king);
+        return;
+    }
+
+    if (sqr == a8 && type == PieceType::rook && color == Color::black) {
+        state.castle_rights &= ~CastleRights::black_queen;
+        return;
+    }
+    if (sqr == h8 && type == PieceType::rook && color == Color::black) {
+        state.castle_rights &= ~CastleRights::black_king;
+        return;
+    }
+    if (sqr == e8 && type == PieceType::king && color == Color::black) {
+        state.castle_rights &= ~(CastleRights::black_queen | CastleRights::black_king);
+        return;
+    }
+}
+} // namespace chess
+
 void chess::do_move(Position &pos, const Move &move) {
     State state;
     state = pos.state;
+    state.en_passant_sqr = -1;
     state.captured_piece = pos.board[move.to];
     state.active_color = !pos.state.active_color;
     state.ply++;
     if (state.ply % 2 == 0) {
         state.on_move++;
     }
+    strip_castle_rights(pos, state, move.from);
 
     pos.history.push_back(pos.state);
 
     Piece &from_piece = pos.board[move.from];
 
-    pos.bb.set_and_bitboard(from_piece.type, from_piece.color, ~(1ULL << move.from));
+    rank_t from_file = move.from % 8;
+    rank_t to_file = move.to % 8;
+    rank_t rank_dist = abs(move.from / 8 - move.to / 8);
+    file_t file_dist = abs(from_file - to_file);
+
+    const bool is_from_white = from_piece.color == Color::white;
+    if (from_piece.type == PieceType::pawn) {
+        if (rank_dist == 2) {
+            state.en_passant_sqr = move.to;
+        } else if (pos.board[move.to].type == PieceType::none && file_dist == 1) {
+            rank_t rank_sign = is_from_white ? 1 : -1;
+            sqr_t capture_sqr = move.to + (-8 * rank_sign);
+            pos.bb.set_and_bitboard(PieceType::pawn, !from_piece.color, ~(1ULL << capture_sqr));
+            pos.board[capture_sqr].type = PieceType::none;
+        }
+    } else if (from_piece.type == PieceType::king && file_dist == 2) {
+        const bool queen_side = to_file < from_file;
+        sqr_t from_rook_sqr = is_from_white ? (queen_side ? a1 : h8) : (queen_side ? a8 : h8);
+        sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
+
+        pos.bb.set_or_bitboard(PieceType::rook, from_piece.color, 1ULL << to_rook_sqr);
+        pos.board[to_rook_sqr].type = PieceType::rook;
+        pos.board[to_rook_sqr].color = from_piece.color;
+        pos.bb.set_and_bitboard(PieceType::rook, from_piece.color, ~(1ULL << from_rook_sqr));
+        pos.board[from_rook_sqr].type = PieceType::none;
+    }
+
     pos.bb.set_or_bitboard(from_piece.type, from_piece.color, 1ULL << move.to);
+    pos.board[move.to] = pos.board[move.from];
+    pos.bb.set_and_bitboard(from_piece.type, from_piece.color, ~(1ULL << move.from));
+    pos.board[move.from].type = PieceType::none;
     if (state.captured_piece.type != PieceType::none) {
         pos.bb.set_and_bitboard(
             state.captured_piece.type, state.captured_piece.color, ~(1ULL << move.to)
         );
     }
 
-    pos.board[move.to] = pos.board[move.from];
-    pos.board[move.from].type = PieceType::none;
-
     pos.state = state;
+    pos.state.checks_bb = attacks_to_king(pos, pos.board[move.to].color);
 }
+
 void chess::undo_move(Position &pos, const Move &move) {
     Piece &to_piece = pos.board[move.to];
+
+    Piece captured = pos.state.captured_piece;
+
+    rank_t from_file = move.from % 8;
+    rank_t to_file = move.to % 8;
+    file_t file_dist = abs(from_file - to_file);
+
+    const bool is_to_white = to_piece.color == Color::white;
+    if (captured.type != PieceType::none) {
+        pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
+    } else if (to_piece.type == PieceType::pawn && file_dist == 1) {
+        rank_t rank_sign = is_to_white ? 1 : -1;
+        sqr_t capture_sqr = move.to + (-8 * rank_sign);
+        pos.bb.set_or_bitboard(PieceType::pawn, !to_piece.color, 1ULL << capture_sqr);
+        pos.board[capture_sqr].type = PieceType::pawn;
+        pos.board[capture_sqr].color = !to_piece.color;
+    }
+
+    if (to_piece.type == PieceType::king && file_dist == 2) {
+        const bool queen_side = to_file < from_file;
+        sqr_t from_rook_sqr = is_to_white ? (queen_side ? a1 : h8) : (queen_side ? a8 : h8);
+        sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
+
+        pos.bb.set_or_bitboard(PieceType::rook, to_piece.color, 1ULL << from_rook_sqr);
+        pos.board[from_rook_sqr].type = PieceType::rook;
+        pos.board[from_rook_sqr].color = to_piece.color;
+        pos.bb.set_and_bitboard(PieceType::rook, to_piece.color, ~(1ULL << to_rook_sqr));
+        pos.board[to_rook_sqr].type = PieceType::none;
+    }
 
     pos.bb.set_and_bitboard(to_piece.type, to_piece.color, ~(1ULL << move.to));
     pos.bb.set_or_bitboard(to_piece.type, to_piece.color, 1ULL << move.from);
 
     pos.board[move.from] = pos.board[move.to];
-    Piece captured = pos.state.captured_piece;
     pos.board[move.to] = captured;
-
     if (captured.type != PieceType::none) {
         pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
     }

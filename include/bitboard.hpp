@@ -10,7 +10,7 @@ namespace chess::bb {
 using U64 = uint64_t;
 using BBColorArray = ColorArray<U64>;
 
-void out_bitboard(U64 bitboard, std::ostream &out);
+void output_bb(U64 bitboard, std::ostream &out);
 
 U64 get_bishop_attack(sqr_t sqr, U64 occ);
 U64 get_rook_attack(sqr_t sqr, U64 occ);
@@ -56,8 +56,6 @@ class PieceBB {
     void set_queens(Color color, U64 bitboard);
     void set_kings(Color color, U64 bitboard);
     void set_bitboard(PieceType type, Color color, U64 bitboard);
-    template <typename set_bitboard_t>
-    void set_bitboard_func(PieceType type, Color color, set_bitboard_t set_func);
     void set_or_bitboard(PieceType type, Color color, bb::U64 bitboard);
     void set_and_bitboard(PieceType type, Color color, bb::U64 bitboard);
 };

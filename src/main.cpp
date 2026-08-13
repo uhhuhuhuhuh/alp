@@ -11,5 +11,7 @@ int main() {
     }
 
     // extremely bulky output so instead output the text into a file: ./alp > test.txt
-    chess::perft_out(*pos, 4, std::cout);
+    // chess::perft_out(*pos, 5, std::cout);
+
+    std::cout << chess::perft(*pos, 7) << '\n';
 }
