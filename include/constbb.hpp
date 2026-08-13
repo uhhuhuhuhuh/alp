@@ -7,7 +7,7 @@
 namespace chess::bb {
 using U64 = uint64_t;
 
-enum class File {
+enum File {
     A,
     B,
     C,

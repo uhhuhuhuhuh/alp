@@ -1,13 +1,19 @@
 #include "genmoves.hpp"
 #include "bitboard.hpp"
 #include "constbb.hpp"
+#include "move.hpp"
 #include "piece.hpp"
 #include "position.hpp"
 #include "square.hpp"
 #include <bit>
 #include <cassert>
-#include <cmath>
-#include <iostream>
+
+// returns index of least significant bit.
+static std::size_t poplsb(chess::bb::U64 &x) {
+    int index = std::countr_zero(x);
+    x &= x - 1;
+    return index;
+}
 
 chess::bb::U64 chess::attacks_to_sqr(const Position &pos, sqr_t sqr, Color color) {
     Color enemy = !color;
@@ -46,18 +52,26 @@ chess::bb::U64 chess::attacks_to_king(const Position &pos, Color color) {
 }
 
 namespace chess {
-static bool is_pawn_move_legal(Position &pos, Move &move) {
-    if (move.to > 63 || move.from > 63 || move.to < 0 || move.from < 0) {
+static inline bool is_not_self_check(Position &pos, const Move &move, Color color) {
+    State st;
+    do_move(pos, move, st);
+    bb::U64 attackers = attacks_to_king(pos, color);
+    undo_move(pos, move);
+
+    if (attackers != 0) {
         return false;
     }
 
-    const Piece &from_piece = pos.board[move.from];
-    assert(from_piece.type == PieceType::pawn);
-    const Piece &to_piece = pos.board[move.to];
+    return true;
+}
 
-    bool is_from_white = from_piece.color == Color::white;
+static bool is_capture_pawn_move_legal(Position &pos, Move &move) {
+    const Piece &from_piece = pos.board[move.from], to_piece = pos.board[move.to];
+    assert(from_piece.type == PieceType::pawn);
+
+    bool is_white = from_piece.color == Color::white;
     rank_t rank_sign = 1;
-    if (!is_from_white) {
+    if (!is_white) {
         rank_sign = -1;
     }
 
@@ -65,54 +79,18 @@ static bool is_pawn_move_legal(Position &pos, Move &move) {
         return false;
     }
 
-    rank_t from_rank = move.from / 8;
-    file_t from_file = move.from % 8;
-    rank_t to_rank = move.to / 8;
-    file_t to_file = move.to % 8;
-    if (is_from_white) {
-        if (move.to <= move.from || to_rank <= from_rank || to_rank - 2 > from_rank) {
+    sqr_t en_passant_sqr = move.to + (rank_sign * -8);
+    if (to_piece.type == PieceType::none) {
+        if (en_passant_sqr != pos.st->en_passant_sqr) {
             return false;
         }
-    } else if (move.to >= move.from || to_rank >= from_rank || to_rank + 2 < from_rank) {
-        return false;
+        move.flags = MoveFlag::ep;
+        return true;
     }
 
-    file_t file_dist = abs(from_file - to_file);
-    rank_t rank_dist = abs(from_rank - to_rank);
-    if (rank_dist > 2 || file_dist > 1) {
-        return false;
-    }
-    if (file_dist == 1) {
-        sqr_t en_passant_sqr = move.to + (rank_sign * -8);
-        if (to_piece.type == PieceType::none && rank_dist == 1 &&
-            en_passant_sqr != pos.st->en_passant_sqr) {
-            return false;
-        }
-    } else {
-        if (to_piece.type != PieceType::none) {
-            return false;
-        }
-        if (rank_dist == 2) {
-            if ((is_from_white && from_rank != 1) || (!is_from_white && from_rank != 6)) {
-                return false;
-            }
-            if (pos.board[move.to - 8 * rank_sign].type != PieceType::none) {
-                return false;
-            }
-        }
-    }
-
-    if ((to_rank == 7 && is_from_white) || (to_rank == 0 && !is_from_white)) {
-        // TODO: add promotion
-    }
-
-    State st;
-    do_move(pos, move, st);
-    bb::U64 attackers = attacks_to_king(pos, from_piece.color);
-    undo_move(pos, move);
-
-    if (attackers != 0) {
-        return false;
+    bb::U64 to_bb = 1ULL << move.to;
+    if (((to_bb & bb::ranks[7]) != 0 && is_white) || ((to_bb & bb::ranks[0]) != 0 && !is_white)) {
+        move.flags = MoveFlag::promotion;
     }
 
     return true;
@@ -131,10 +109,8 @@ static bool is_knight_move_legal(Position &pos, Move &move) {
         return false;
     }
 
-    rank_t from_rank = move.from / 8;
-    file_t from_file = move.from % 8;
-    rank_t to_rank = move.to / 8;
-    file_t to_file = move.to % 8;
+    rank_t from_rank = move.from / 8, to_rank = move.to / 8;
+    file_t from_file = move.from % 8, to_file = move.to % 8;
 
     file_t file_dist = abs(from_file - to_file);
     rank_t rank_dist = abs(from_rank - to_rank);
@@ -147,15 +123,7 @@ static bool is_knight_move_legal(Position &pos, Move &move) {
         return false;
     }
 
-    State st;
-    do_move(pos, move, st);
-    bb::U64 attackers = attacks_to_king(pos, from_piece.color);
-    undo_move(pos, move);
-
-    if (attackers != 0) {
-        return false;
-    }
-    return true;
+    return is_not_self_check(pos, move, from_piece.color);
 }
 
 static bool is_king_move_legal(Position &pos, Move &move) {
@@ -163,18 +131,15 @@ static bool is_king_move_legal(Position &pos, Move &move) {
         return false;
     }
 
-    const Piece &from_piece = pos.board[move.from];
+    const Piece &from_piece = pos.board[move.from], to_piece = pos.board[move.to];
     assert(from_piece.type == PieceType::king);
-    const Piece &to_piece = pos.board[move.to];
 
     if (to_piece.type != PieceType::none && to_piece.color == from_piece.color) {
         return false;
     }
 
-    rank_t from_rank = move.from / 8;
-    file_t from_file = move.from % 8;
-    rank_t to_rank = move.to / 8;
-    file_t to_file = move.to % 8;
+    rank_t from_rank = move.from / 8, to_rank = move.to / 8;
+    file_t from_file = move.from % 8, to_file = move.to % 8;
 
     file_t file_dist = abs(from_file - to_file);
     rank_t rank_dist = abs(from_rank - to_rank);
@@ -184,26 +149,17 @@ static bool is_king_move_legal(Position &pos, Move &move) {
     }
 
     if (file_dist < 2) {
-        State st;
-        do_move(pos, move, st);
-        bb::U64 attackers = attacks_to_king(pos, from_piece.color);
-        undo_move(pos, move);
-
-        if (attackers != 0) {
-            return false;
-        }
-        return true;
+        return is_not_self_check(pos, move, from_piece.color);
     }
 
     if (pos.st->checks_bb != 0) {
         return false;
     }
 
-    const bool is_from_white = from_piece.color == Color::white;
-    const bool queen_side = to_file < from_file;
-    CastleRights rights =
-        queen_side ? (is_from_white ? CastleRights::white_queen : CastleRights::black_queen)
-                   : (is_from_white ? CastleRights::white_king : CastleRights::black_king);
+    const bool is_white = from_piece.color == Color::white, queen_side = to_file < from_file;
+    CastleRights rights = queen_side
+                              ? (is_white ? CastleRights::white_queen : CastleRights::black_queen)
+                              : (is_white ? CastleRights::white_king : CastleRights::black_king);
     if ((pos.st->castle_rights & rights) == 0) {
         return false;
     }
@@ -228,15 +184,8 @@ static bool is_king_move_legal(Position &pos, Move &move) {
         }
     }
 
+    move.flags = MoveFlag::castle;
     return true;
-}
-
-inline static void push_pawn_move(Position &pos, sqr_t from, sqr_t to, std::vector<Move> &moves) {
-    Move move(from, to);
-
-    if (is_pawn_move_legal(pos, move)) {
-        moves.push_back(move);
-    }
 }
 
 inline static void push_knight_move(Position &pos, sqr_t from, sqr_t to, std::vector<Move> &moves) {
@@ -257,17 +206,43 @@ inline static void push_king_move(Position &pos, sqr_t from, sqr_t to, std::vect
 } // namespace chess
 void chess::gen_pawn_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     assert(sqr >= 0 && sqr < 64);
+
     const Piece &piece = pos.board[sqr];
     assert(piece.type == PieceType::pawn);
-    rank_t rank_sign = 1;
+    Color color = piece.color;
+
+    rank_t rank_sign = 1, promotion = 7, starting = 1;
     if (piece.color == Color::black) {
-        rank_sign = -1;
+        rank_sign = -1, promotion = 0, starting = 6;
     }
-    push_pawn_move(pos, sqr, sqr + (8 * rank_sign), moves);
-    push_pawn_move(pos, sqr, sqr + (7 * rank_sign), moves);
-    push_pawn_move(pos, sqr, sqr + (9 * rank_sign), moves);
-    push_pawn_move(pos, sqr, sqr + (16 * rank_sign), moves);
+
+    bb::U64 occ = pos.bb.get_occupancy();
+    bb::U64 sqr_bb = 1ULL << sqr;
+
+    sqr_t single_push = sqr + (8 * rank_sign);
+    bool is_single_push_empty = ((1ULL << single_push) & occ) == 0;
+    Move move(sqr, single_push);
+    if (is_single_push_empty && is_not_self_check(pos, move, color)) {
+        if (((1ULL << single_push) & bb::ranks[promotion]) != 0) {
+            move.flags = MoveFlag::promotion;
+        }
+        moves.push_back(move);
+    }
+    move.to = sqr + (16 * rank_sign), move.flags = MoveFlag::quiet;
+    if ((sqr_bb & bb::ranks[starting]) != 0 && ((1ULL << move.to) & occ) == 0 &&
+        is_single_push_empty && is_not_self_check(pos, move, color)) {
+        moves.push_back(move);
+    }
+
+    bb::U64 attacks = bb::pawn_attacks[color][sqr];
+    while (attacks != 0) {
+        move.to = poplsb(attacks), move.flags = MoveFlag::quiet;
+        if (is_capture_pawn_move_legal(pos, move) && is_not_self_check(pos, move, color)) {
+            moves.push_back(move);
+        }
+    }
 }
+
 void chess::gen_knight_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::knight);
@@ -281,29 +256,18 @@ void chess::gen_knight_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves)
     push_knight_move(pos, sqr, sqr + (-1 * 8) - 2, moves);
 }
 
-// returns index of least significant bit.
-static std::size_t poplsb(chess::bb::U64 &x) {
-    int index = std::countr_zero(x);
-    x &= x - 1;
-    return index;
-}
-
 void chess::gen_bishop_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::bishop);
 
-    bb::U64 attack_bb = bb::get_bishop_attack(sqr, pos.bb.get_occupancy()) &
-                        ~(pos.bb.get_every_type()[pos.board[sqr].color]);
+    Color color = pos.board[sqr].color;
+    bb::U64 attack_bb =
+        bb::get_bishop_attack(sqr, pos.bb.get_occupancy()) & ~(pos.bb.get_every_type()[color]);
     while (attack_bb != 0) {
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        State st;
-        do_move(pos, move, st);
-        bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
-        undo_move(pos, move);
-
-        if (attackers == 0) {
+        if (is_not_self_check(pos, move, color)) {
             moves.push_back(move);
         }
     }
@@ -313,18 +277,14 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::rook);
 
-    bb::U64 attack_bb = bb::get_rook_attack(sqr, pos.bb.get_occupancy()) &
-                        ~(pos.bb.get_every_type()[pos.board[sqr].color]);
+    Color color = pos.board[sqr].color;
+    bb::U64 attack_bb =
+        bb::get_rook_attack(sqr, pos.bb.get_occupancy()) & ~(pos.bb.get_every_type()[color]);
     while (attack_bb != 0) {
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        State st;
-        do_move(pos, move, st);
-        bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
-        undo_move(pos, move);
-
-        if (attackers == 0) {
+        if (is_not_self_check(pos, move, color)) {
             moves.push_back(move);
         }
     }
@@ -341,12 +301,7 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) 
         std::size_t idx = poplsb(attack_bb);
         Move move(sqr, idx);
 
-        State st;
-        do_move(pos, move, st);
-        bb::U64 attackers = attacks_to_king(pos, pos.board[sqr].color);
-        undo_move(pos, move);
-
-        if (attackers == 0) {
+        if (is_not_self_check(pos, move, pos.board[sqr].color)) {
             moves.push_back(move);
         }
     }

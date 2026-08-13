@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <optional>
 #include <ostream>
-#include <vector>
 
 namespace chess {
 enum CastleRights : uint32_t {
@@ -20,34 +19,6 @@ enum CastleRights : uint32_t {
     black_king = 8,
 };
 
-/* inline void operator|=(CastleRights &l, CastleRights r) {
-    l = static_cast<CastleRights>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r));
-}
-
-inline void operator&=(CastleRights &l, CastleRights r) {
-    l = static_cast<CastleRights>(static_cast<uint32_t>(l) & static_cast<uint32_t>(r));
-}
-
-inline CastleRights operator&(CastleRights l, CastleRights r) {
-    return static_cast<CastleRights>(static_cast<uint32_t>(l) & static_cast<uint32_t>(r));
-}
-
-inline CastleRights operator|(CastleRights l, CastleRights r) {
-    return static_cast<CastleRights>(static_cast<uint32_t>(l) | static_cast<uint32_t>(r));
-}
-
-inline CastleRights operator~(CastleRights l) {
-    return static_cast<CastleRights>(~static_cast<uint32_t>(l));
-}
-
-inline CastleRights operator-(CastleRights l, uint32_t r) {
-    return static_cast<CastleRights>(static_cast<uint32_t>(l) - r);
-}
-
-inline CastleRights operator<<(uint32_t l, CastleRights r) {
-    return static_cast<CastleRights>(l << static_cast<uint32_t>(r));
-} */
-
 struct State {
   public:
     Color active_color = Color::white;
@@ -55,9 +26,7 @@ struct State {
     Piece captured_piece;
     sqr_t en_passant_sqr = -1;
     bb::U64 checks_bb = 0ULL;
-    uint32_t ply = 0;
     uint32_t halfmove_clock = 0;
-    uint32_t on_move = 0;
 
     State *prev = nullptr;
 
@@ -68,6 +37,7 @@ struct State {
 // a struct which holds all the important data used in a game of chess.
 struct Position {
   public:
+    uint32_t game_ply = 0;
     std::array<Piece, 64> board;
     bb::PieceBB bb;
 

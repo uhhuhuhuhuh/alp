@@ -38,36 +38,6 @@ bb::U64 bb::get_rook_attack(sqr_t sqr, U64 occ) {
     return rook_attacks[rook_offsets[sqr] + occ];
 }
 
-void bb::PieceBB::reset_every_type(Color color) {
-    every_type[color] = pawns[color] | knights[color] | bishops[color] | rooks[color] |
-                        queens[color] | kings[color];
-}
-
-void bb::PieceBB::set_pawns(Color color, U64 bitboard) {
-    pawns[color] = bitboard;
-    reset_every_type(color);
-}
-void bb::PieceBB::set_knights(Color color, U64 bitboard) {
-    knights[color] = bitboard;
-    reset_every_type(color);
-}
-void bb::PieceBB::set_bishops(Color color, U64 bitboard) {
-    bishops[color] = bitboard;
-    reset_every_type(color);
-}
-void bb::PieceBB::set_rooks(Color color, U64 bitboard) {
-    rooks[color] = bitboard;
-    reset_every_type(color);
-}
-void bb::PieceBB::set_queens(Color color, U64 bitboard) {
-    queens[color] = bitboard;
-    reset_every_type(color);
-}
-void bb::PieceBB::set_kings(Color color, U64 bitboard) {
-    kings[color] = bitboard;
-    reset_every_type(color);
-}
-
 void bb::PieceBB::set_bitboard(PieceType type, Color color, U64 bitboard) {
     switch (type) {
     case PieceType::pawn:   set_pawns(color, bitboard); break;

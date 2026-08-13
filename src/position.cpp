@@ -1,5 +1,6 @@
 #include "position.hpp"
 #include "genmoves.hpp"
+#include "move.hpp"
 #include "piece.hpp"
 #include "square.hpp"
 #include <cctype>
@@ -75,7 +76,7 @@ void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
     }
 
     out << ' ' << pos.st->halfmove_clock;
-    out << ' ' << pos.st->on_move << '\n';
+    out << ' ' << pos.game_ply / 2 << '\n';
 }
 
 namespace chess {
@@ -286,12 +287,15 @@ std::optional<chess::Position> chess::fen_parser(std::string_view sv, State &st)
             break;
         case on_t::move_count:
             try {
-                pos.st->on_move = std::stoi(sub_str); // comment here cuz clang-format is dumb
+                pos.game_ply = std::stoi(sub_str) * 2; // comment here cuz clang-format is dumb
+                if (pos.st->active_color == Color::black) {
+                    pos.game_ply++;
+                }
             } catch (const std::exception &e) {
                 return {};
             }
             // with a forced 50 move rule 5949 is the longest theoretical game
-            if (pos.st->on_move > 5949) {
+            if (pos.game_ply > 5949 * 2) {
                 return {};
             }
             break;
@@ -355,6 +359,16 @@ static void strip_castle_rights(const Position &pos, State &state, sqr_t sqr) {
         return;
     }
 }
+
+static void move_piece(Position &pos, sqr_t from, sqr_t to) {
+    PieceType type = pos.board[from].type;
+    Color color = pos.board[from].color;
+    pos.bb.set_or_bitboard(type, color, 1ULL << to);
+    pos.board[to].type = type;
+    pos.board[to].color = color;
+    pos.bb.set_and_bitboard(type, color, ~(1ULL << from));
+    pos.board[from].type = PieceType::none;
+}
 } // namespace chess
 
 void chess::do_move(Position &pos, const Move &move, State &st) {
@@ -363,10 +377,7 @@ void chess::do_move(Position &pos, const Move &move, State &st) {
     st.en_passant_sqr = -1;
     st.captured_piece = pos.board[move.to];
     st.active_color = !pos.st->active_color;
-    st.ply++;
-    if (st.ply % 2 == 0) {
-        st.on_move++;
-    }
+    pos.game_ply++;
     strip_castle_rights(pos, st, move.from);
 
     Piece &from_piece = pos.board[move.from];
@@ -374,34 +385,26 @@ void chess::do_move(Position &pos, const Move &move, State &st) {
     rank_t from_file = move.from % 8;
     rank_t to_file = move.to % 8;
     rank_t rank_dist = abs(move.from / 8 - move.to / 8);
-    file_t file_dist = abs(from_file - to_file);
 
     const bool is_from_white = from_piece.color == Color::white;
-    if (from_piece.type == PieceType::pawn) {
-        if (rank_dist == 2) {
-            st.en_passant_sqr = move.to;
-        } else if (pos.board[move.to].type == PieceType::none && file_dist == 1) {
-            rank_t rank_sign = is_from_white ? 1 : -1;
-            sqr_t capture_sqr = move.to + (-8 * rank_sign);
-            pos.bb.set_and_bitboard(PieceType::pawn, !from_piece.color, ~(1ULL << capture_sqr));
-            pos.board[capture_sqr].type = PieceType::none;
-        }
-    } else if (from_piece.type == PieceType::king && file_dist == 2) {
+    if (move.flags == MoveFlag::ep) {
+        rank_t rank_sign = is_from_white ? 1 : -1;
+        sqr_t capture_sqr = move.to + (-8 * rank_sign);
+        pos.bb.set_and_bitboard(PieceType::pawn, !from_piece.color, ~(1ULL << capture_sqr));
+        pos.board[capture_sqr].type = PieceType::none;
+    } else if (from_piece.type == PieceType::pawn && rank_dist == 2) {
+        st.en_passant_sqr = move.to;
+    }
+    if (move.flags == MoveFlag::castle) {
         const bool queen_side = to_file < from_file;
-        sqr_t from_rook_sqr = is_from_white ? (queen_side ? a1 : h8) : (queen_side ? a8 : h8);
+        sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_file * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
 
-        pos.bb.set_or_bitboard(PieceType::rook, from_piece.color, 1ULL << to_rook_sqr);
-        pos.board[to_rook_sqr].type = PieceType::rook;
-        pos.board[to_rook_sqr].color = from_piece.color;
-        pos.bb.set_and_bitboard(PieceType::rook, from_piece.color, ~(1ULL << from_rook_sqr));
-        pos.board[from_rook_sqr].type = PieceType::none;
+        move_piece(pos, from_rook_sqr, to_rook_sqr);
     }
 
-    pos.bb.set_or_bitboard(from_piece.type, from_piece.color, 1ULL << move.to);
-    pos.board[move.to] = pos.board[move.from];
-    pos.bb.set_and_bitboard(from_piece.type, from_piece.color, ~(1ULL << move.from));
-    pos.board[move.from].type = PieceType::none;
+    move_piece(pos, move.from, move.to);
+
     if (st.captured_piece.type != PieceType::none) {
         pos.bb.set_and_bitboard(
             st.captured_piece.type, st.captured_piece.color, ~(1ULL << move.to)
@@ -422,38 +425,28 @@ void chess::undo_move(Position &pos, const Move &move) {
     file_t file_dist = abs(from_file - to_file);
 
     const bool is_to_white = to_piece.color == Color::white;
-    if (captured.type != PieceType::none) {
-        pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
-    } else if (to_piece.type == PieceType::pawn && file_dist == 1) {
+    if (move.flags == MoveFlag::ep) {
         rank_t rank_sign = is_to_white ? 1 : -1;
         sqr_t capture_sqr = move.to + (-8 * rank_sign);
         pos.bb.set_or_bitboard(PieceType::pawn, !to_piece.color, 1ULL << capture_sqr);
-        pos.board[capture_sqr].type = PieceType::pawn;
+        pos.board[capture_sqr].type = PieceType::pawn,
         pos.board[capture_sqr].color = !to_piece.color;
     }
 
     if (to_piece.type == PieceType::king && file_dist == 2) {
         const bool queen_side = to_file < from_file;
-        sqr_t from_rook_sqr = is_to_white ? (queen_side ? a1 : h8) : (queen_side ? a8 : h8);
+        sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_file * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
 
-        pos.bb.set_or_bitboard(PieceType::rook, to_piece.color, 1ULL << from_rook_sqr);
-        pos.board[from_rook_sqr].type = PieceType::rook;
-        pos.board[from_rook_sqr].color = to_piece.color;
-        pos.bb.set_and_bitboard(PieceType::rook, to_piece.color, ~(1ULL << to_rook_sqr));
-        pos.board[to_rook_sqr].type = PieceType::none;
+        move_piece(pos, to_rook_sqr, from_rook_sqr);
     }
 
-    pos.bb.set_and_bitboard(to_piece.type, to_piece.color, ~(1ULL << move.to));
-    pos.bb.set_or_bitboard(to_piece.type, to_piece.color, 1ULL << move.from);
-
-    pos.board[move.from] = pos.board[move.to];
+    move_piece(pos, move.to, move.from);
     pos.board[move.to] = captured;
-    if (captured.type != PieceType::none) {
-        pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
-    }
+    pos.bb.set_or_bitboard(captured.type, captured.color, 1ULL << move.to);
 
     pos.st = pos.st->prev;
+    pos.game_ply--;
 }
 
 namespace chess {
@@ -500,27 +493,39 @@ static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, st
     out << indent << "}\n";
     return move_count;
 }
-} // namespace chess
 
-uint64_t chess::perft(Position &state, uint32_t depth) {
-    if (depth == 0) {
-        return 0;
-    }
+template <bool root> uint64_t perft_helper(Position &state, uint32_t depth) {
+    State st;
+
+    uint64_t count = 0, nodes = 0;
+    const bool leaf = depth == 2;
+
     std::vector<Move> moves;
     gen_legal_moves(state, moves);
-    if (depth == 1) {
-        return moves.size();
-    }
 
-    uint64_t move_count = 0;
-    State st;
-    for (Move move : moves) {
+    for (const Move &move : moves) {
+        if (root && depth <= 1) {
+            count = 1;
+            nodes++;
+            continue;
+        }
         do_move(state, move, st);
-        move_count += perft(state, depth - 1);
+        if (leaf) {
+            std::vector<Move> deeper_moves;
+            gen_legal_moves(state, deeper_moves);
+            count = deeper_moves.size();
+        } else {
+            count = perft_helper<false>(state, depth - 1);
+        }
+        nodes += count;
         undo_move(state, move);
     }
-    return move_count;
+
+    return nodes;
 }
+} // namespace chess
+
+uint64_t chess::perft(Position &state, uint32_t depth) { return perft_helper<true>(state, depth); }
 
 uint64_t chess::perft_out(Position &state, uint32_t depth, std::ostream &out) {
     return perft_out_helper(state, 0, depth, out);
