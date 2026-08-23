@@ -15,6 +15,17 @@ void output_bb(U64 bitboard, std::ostream &out);
 U64 get_bishop_attack(sqr_t sqr, U64 occ);
 U64 get_rook_attack(sqr_t sqr, U64 occ);
 
+inline U64 xray_bishop_attack(U64 occ, U64 blockers, sqr_t bishop_sqr) {
+    U64 attacks = get_bishop_attack(bishop_sqr, occ);
+    blockers &= attacks;
+    return attacks ^ get_bishop_attack(bishop_sqr, occ ^ blockers);
+}
+inline U64 xray_rook_attack(U64 occ, U64 blockers, sqr_t rook_sqr) {
+    U64 attacks = get_rook_attack(rook_sqr, occ);
+    blockers &= attacks;
+    return attacks ^ get_rook_attack(rook_sqr, occ ^ blockers);
+}
+
 class PieceBB {
   private:
     BBColorArray pawns{};

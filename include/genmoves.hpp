@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bitboard.hpp"
 #include "position.hpp"
 #include "square.hpp"
 
@@ -10,6 +11,13 @@ namespace chess {
 bb::U64 attacks_to_sqr(const Position &pos, sqr_t sqr, Color attacked_color);
 // returns a bitboard of pieces attacking the king
 bb::U64 attacks_to_king(const Position &pos, Color checked_color);
+
+struct PinBBs {
+    bb::U64 pinned = 0;
+    bb::U64 pinners = 0;
+    std::array<bb::U64, 64> pin_rays{};
+};
+PinBBs get_pins(const Position &pos, Color color);
 
 void gen_pawn_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);
 void gen_knight_moves(Position &pos, sqr_t sqr_t, std::vector<Move> &moves);

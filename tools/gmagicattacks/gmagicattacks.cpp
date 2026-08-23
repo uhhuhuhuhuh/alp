@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -12,6 +13,38 @@
 
 namespace bb = chess::bb;
 using namespace chess;
+
+std::array<std::array<bb::U64, 64>, 64> get_slider_between() {
+    decltype(get_slider_between()) slider_between{};
+
+    for (sqr_t from = 0; from < 64; from++) {
+        for (sqr_t to = 0; to < 64; to++) {
+            rank_t dr = to / 8 - from / 8;
+            file_t df = to % 8 - from % 8;
+
+            if (dr == 0 && df == 0) {
+                continue;
+            }
+
+            sqr_t dir = 0;
+            if (df == 0) {
+                dir = dr > 0 ? 8 : -8;
+            } else if (dr == 0) {
+                dir = df > 0 ? 1 : -1;
+            } else if (std::abs(df) == std::abs(dr)) {
+                dir = (dr > 0 ? 8 : -8) + (df > 0 ? 1 : -1);
+            } else {
+                continue;
+            }
+
+            for (sqr_t between = from + dir; between != to; between += dir) {
+                slider_between[from][to] |= 1ULL << between;
+            }
+        }
+    }
+
+    return slider_between;
+}
 
 constexpr std::size_t get_bishop_attacks_size() {
     std::size_t size = 0;
@@ -346,10 +379,30 @@ void out_color_arr(const bb::ColorArray<std::array<bb::U64, 64>> &arr, std::stri
     std::cout << "});\n";
 }
 
-template <typename std::size_t size>
+template <std::size_t size1, std::size_t size2>
+void out_U64_2d_arr(
+    const std::array<std::array<bb::U64, size1>, size2> &arr, std::string_view sv_name
+) {
+    std::cout << "constexpr std::array<std::array<U64, " << size1 << ">, " << size2 << "> "
+              << sv_name << " = {\n";
+    for (std::size_t i = 0; i < arr.size(); i++) {
+        std::cout << "    std::array<U64, " << arr[i].size() << ">{\n";
+        for (std::size_t j = 0; j < arr[i].size(); j++) {
+            std::cout << "        " << arr[i][j] << "ULL";
+            if (j < arr[i].size() - 1) {
+                std::cout << ",";
+            }
+            std::cout << "\n";
+        }
+        std::cout << "    }" << (i < arr.size() - 1 ? "," : "") << '\n';
+    }
+    std::cout << "};\n";
+}
+
+template <std::size_t size>
 void out_U64_arr(const std::array<bb::U64, size> &arr, std::string_view sv_name) {
     std::cout << "constexpr std::array<U64, " << arr.size() << "> " << sv_name << " = {\n";
-    for (size_t i = 0; i < arr.size(); i++) {
+    for (std::size_t i = 0; i < arr.size(); i++) {
         std::cout << "    " << arr[i] << "ULL";
         if (i < arr.size() - 1) {
             std::cout << ",";
@@ -361,7 +414,7 @@ void out_U64_arr(const std::array<bb::U64, size> &arr, std::string_view sv_name)
 
 void out_gmagic_arr(const std::array<bb::GMagic, 64> &tbl, std::string_view sv_name) {
     std::cout << "constexpr std::array<GMagic, 64> " << sv_name << " = {\n";
-    for (size_t i = 0; i < 64; i++) {
+    for (std::size_t i = 0; i < 64; i++) {
         std::cout << "    bb::GMagic{" << tbl[i].mask << "ULL, " << tbl[i].magic << "ULL}";
         if (i < 63) {
             std::cout << ",";
@@ -372,6 +425,9 @@ void out_gmagic_arr(const std::array<bb::GMagic, 64> &tbl, std::string_view sv_n
 }
 
 int main() {
+    auto slider_between = get_slider_between();
+    out_U64_2d_arr(slider_between, "slider_between");
+    /*
     auto pawn_attacks = get_pawn_attacks();
     auto knight_attacks = get_knight_attacks();
     Attacks<bishop_attacks_size> bishop_attacks;
@@ -388,5 +444,5 @@ int main() {
     out_U64_arr(rook_attacks.offsets, "rook_offsets");
     out_U64_arr(bishop_attacks.data, "bishop_attacks");
     out_U64_arr(rook_attacks.data, "rook_attacks");
-    out_U64_arr(king_attacks, "king_attacks");
+    out_U64_arr(king_attacks, "king_attacks"); */
 }

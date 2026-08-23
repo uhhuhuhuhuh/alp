@@ -11,7 +11,7 @@
 #include <ostream>
 
 namespace chess {
-enum CastleRights : uint32_t {
+enum CastleRights : uint16_t {
     none = 0,
     white_queen = 1,
     white_king = 2,
@@ -58,9 +58,9 @@ constexpr std::string_view starting_pos_fen =
 // returns nothing if the string is not in proper FEN notation
 std::optional<Position> fen_parser(std::string_view sv, State &st);
 
-// ouputs the data in the given Position and prints the board from white's perspective into the
+// outputs the data in the given Position and prints the board from white's perspective into the
 // given ostream
-void ouput_pos(const Position &pos, std::ostream &out);
+void output_pos(const Position &pos, std::ostream &out);
 
 // makes a move and flips the active side
 void do_move(Position &pos, const Move &move, State &st);
@@ -70,7 +70,7 @@ void undo_move(Position &pos, const Move &move);
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
 // Returns the sum of all the total nodes from each searched depth and branch.
 // (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
-uint64_t perft(Position &pos, uint32_t depth);
+uint64_t perft(Position &pos, uint32_t depth, std::ostream &out);
 
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
 // Writes the positon and perft results for each searched depth and branch
