@@ -30,28 +30,6 @@ static void branch(
 
         chess::do_move(pos, *it, st[st_idx]);
     }
-}
-
-int main() {
-    std::array<chess::State, 256> st;
-    constexpr std::string_view fen = chess::starting_pos_fen;
-    std::optional<chess::Position> pos = chess::fen_parser(fen, st[0]);
-    if (!pos.has_value()) {
-        std::cout << "ERROR: can't parse fen: " << fen << '\n';
-        return -1;
-    }
-
-    // c3b4
-
-    std::vector<chess::Move> moves = {
-    };
-
-    branch(*pos, moves, st, 1);
-    chess::output_pos(*pos, std::cout);
-    chess::output_pos_as_fen(*pos, std::cout);
-    uint32_t max = 7;
-    uint32_t count = chess::perft(*pos, max - moves.size(), std::cout);
-    std::cout << "Count: " << count << '\n';
 } */
 
 int main() {

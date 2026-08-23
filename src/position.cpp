@@ -465,12 +465,11 @@ void chess::undo_move(Position &pos, const Move &move) {
 }
 
 namespace chess {
-static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, std::ostream &out) {
+static uint64_t perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &out) {
     if (depth >= max) {
         return 0;
     }
-    std::vector<Move> moves;
-    gen_legal_moves(pos, moves);
+    auto moves = gen_legal_moves(pos);
 
     std::string indent = "";
     for (uint32_t i = 0; i < depth; i++) {
@@ -479,13 +478,11 @@ static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, st
 
     out << indent << "{\n";
     std::stringstream ss;
-    std::ostringstream oss;
     output_pos(pos, ss);
     std::string str;
     while (std::getline(ss, str)) {
-        oss << indent << str << '\n';
+        out << indent << str << '\n';
     }
-    out << oss.str() << '\n';
 
     out << indent << "Moves: " << moves.size() << '\n';
     for (const Move &move : moves) {
@@ -497,11 +494,11 @@ static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, st
     }
 
     uint64_t move_count = 0;
-    State st;
     for (const Move &move : moves) {
         out << indent << "done move: " << sqr_format(move.from) << sqr_format(move.to) << '\n';
+        State st;
         do_move(pos, move, st);
-        move_count += perft_out_helper(pos, depth + 1, max, out);
+        move_count += perft_out_recursive(pos, depth + 1, max, out);
         undo_move(pos, move);
     }
     out << indent << "total move count: " << move_count << '\n';
@@ -509,30 +506,20 @@ static uint64_t perft_out_helper(Position &pos, uint32_t depth, uint32_t max, st
     return move_count;
 }
 
-template <bool root> uint64_t perft_helper(Position &state, uint32_t depth, std::ostream &out) {
-    State st;
-
+template <bool root> uint64_t perf_recursive(Position &pos, uint32_t depth, std::ostream &out) {
     uint64_t count = 0, nodes = 0;
     const bool leaf = depth == 2;
 
-    std::vector<Move> moves;
-    gen_legal_moves(state, moves);
-
-    for (const Move &move : moves) {
+    for (const Move &move : gen_legal_moves(pos)) {
         if (root && depth <= 1) {
             count = 1;
             nodes++;
         } else {
-            do_move(state, move, st);
-            if (leaf) {
-                std::vector<Move> deeper_moves;
-                gen_legal_moves(state, deeper_moves);
-                count = deeper_moves.size();
-            } else {
-                count = perft_helper<false>(state, depth - 1, out);
-            }
+            State st;
+            do_move(pos, move, st);
+            count = leaf ? gen_legal_moves(pos).size() : perf_recursive<false>(pos, depth - 1, out);
             nodes += count;
-            undo_move(state, move);
+            undo_move(pos, move);
         }
         if (root) {
             out << sqr_format(move.from) << sqr_format(move.to) << ": " << count << '\n';
@@ -544,9 +531,9 @@ template <bool root> uint64_t perft_helper(Position &state, uint32_t depth, std:
 } // namespace chess
 
 uint64_t chess::perft(Position &state, uint32_t depth, std::ostream &out) {
-    return perft_helper<true>(state, depth, out);
+    return perf_recursive<true>(state, depth, out);
 }
 
 uint64_t chess::perft_out(Position &state, uint32_t depth, std::ostream &out) {
-    return perft_out_helper(state, 0, depth, out);
+    return perft_out_recursive(state, 0, depth, out);
 }

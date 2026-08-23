@@ -179,7 +179,7 @@ static bool is_king_move_legal(Position &pos, Move &move) {
     return true;
 }
 
-inline static void push_king_move(Position &pos, sqr_t from, sqr_t to, std::vector<Move> &moves) {
+inline static void push_king_move(Position &pos, sqr_t from, sqr_t to, MoveArray &moves) {
     Move move(from, to);
 
     if (is_king_move_legal(pos, move)) {
@@ -187,7 +187,7 @@ inline static void push_king_move(Position &pos, sqr_t from, sqr_t to, std::vect
     }
 }
 } // namespace chess
-void chess::gen_pawn_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
 
     const Piece &piece = pos.board[sqr];
@@ -228,7 +228,7 @@ void chess::gen_pawn_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     }
 }
 
-void chess::gen_knight_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::knight);
 
@@ -245,7 +245,7 @@ void chess::gen_knight_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves)
     }
 }
 
-void chess::gen_bishop_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::bishop);
 
@@ -263,7 +263,7 @@ void chess::gen_bishop_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves)
     }
 }
 
-void chess::gen_rook_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::rook);
 
@@ -281,7 +281,7 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     }
 }
 
-void chess::gen_queen_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::queen);
 
@@ -299,7 +299,7 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) 
     }
 }
 
-void chess::gen_king_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
+void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::king);
     push_king_move(pos, sqr, sqr + 1, moves);
@@ -314,8 +314,8 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, std::vector<Move> &moves) {
     push_king_move(pos, sqr, sqr - 2, moves);
 }
 
-void chess::gen_legal_moves(Position &pos, std::vector<Move> &legal) {
-    std::vector<Move> moves;
+chess::MoveArray chess::gen_legal_moves(Position &pos) {
+    MoveArray moves;
     Color color = pos.st->active_color;
     PinBBs pin_bb = get_pins(pos, color);
     std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
@@ -342,6 +342,7 @@ void chess::gen_legal_moves(Position &pos, std::vector<Move> &legal) {
         }
     }
 
+    MoveArray legal;
     for (const Move &move : moves) {
         bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
         if (checker_count == 1 && is_pinned) {
@@ -384,4 +385,6 @@ void chess::gen_legal_moves(Position &pos, std::vector<Move> &legal) {
 
         legal.push_back(move);
     }
+
+    return legal;
 }
