@@ -8,6 +8,17 @@ using sqr_t = short;
 using rank_t = short;
 using file_t = short;
 
+enum File {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+};
+
 // clang-format off
 enum Sqr : sqr_t {
 	a1, b1, c1, d1, e1, f1, g1, h1,

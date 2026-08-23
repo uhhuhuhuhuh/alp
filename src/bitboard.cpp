@@ -37,39 +37,3 @@ bb::U64 bb::get_rook_attack(sqr_t sqr, U64 occ) {
     occ >>= (64 - rook_bit_idxs[sqr]);
     return rook_attacks[rook_offsets[sqr] + occ];
 }
-
-void bb::PieceBB::set_bitboard(PieceType type, Color color, U64 bitboard) {
-    switch (type) {
-    case PieceType::pawn:   set_pawns(color, bitboard); break;
-    case PieceType::knight: set_knights(color, bitboard); break;
-    case PieceType::bishop: set_bishops(color, bitboard); break;
-    case PieceType::rook:   set_rooks(color, bitboard); break;
-    case PieceType::queen:  set_queens(color, bitboard); break;
-    case PieceType::king:   set_kings(color, bitboard); break;
-    default:                break;
-    }
-}
-
-void bb::PieceBB::set_or_bitboard(PieceType type, Color color, U64 bitboard) {
-    switch (type) {
-    case PieceType::pawn:   set_pawns(color, pawns[color] | bitboard); break;
-    case PieceType::knight: set_knights(color, knights[color] | bitboard); break;
-    case PieceType::bishop: set_bishops(color, bishops[color] | bitboard); break;
-    case PieceType::rook:   set_rooks(color, rooks[color] | bitboard); break;
-    case PieceType::queen:  set_queens(color, queens[color] | bitboard); break;
-    case PieceType::king:   set_kings(color, kings[color] | bitboard); break;
-    default:                break;
-    }
-}
-
-void bb::PieceBB::set_and_bitboard(PieceType type, Color color, U64 bitboard) {
-    switch (type) {
-    case PieceType::pawn:   set_pawns(color, pawns[color] & bitboard); break;
-    case PieceType::knight: set_knights(color, knights[color] & bitboard); break;
-    case PieceType::bishop: set_bishops(color, bishops[color] & bitboard); break;
-    case PieceType::rook:   set_rooks(color, rooks[color] & bitboard); break;
-    case PieceType::queen:  set_queens(color, queens[color] & bitboard); break;
-    case PieceType::king:   set_kings(color, kings[color] & bitboard); break;
-    default:                break;
-    }
-}

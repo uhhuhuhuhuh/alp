@@ -18,32 +18,32 @@ static inline std::size_t poplsb(chess::bb::U64 &x) {
 chess::bb::U64 chess::attacks_to_sqr(const Position &pos, sqr_t sqr, Color color) {
     Color enemy = !color;
 
-    bb::U64 occupancy = pos.bb.get_occupancy();
+    bb::U64 occupancy = pos.bb.occupancy();
     // Rook & Queen, Bishop & Queen
     bb::U64 RQ, BQ;
-    RQ = BQ = pos.bb.get_queens()[enemy];
-    RQ |= pos.bb.get_rooks()[enemy];
-    BQ |= pos.bb.get_bishops()[enemy];
+    RQ = BQ = pos.bb.get(PieceType::queen)[enemy];
+    RQ |= pos.bb.get(PieceType::rook)[enemy];
+    BQ |= pos.bb.get(PieceType::bishop)[enemy];
 
-    return (bb::pawn_attacks[color][sqr] & pos.bb.get_pawns()[enemy]) |
-           (bb::knight_attacks[sqr] & pos.bb.get_knights()[enemy]) |
+    return (bb::pawn_attacks[color][sqr] & pos.bb.get(PieceType::pawn)[enemy]) |
+           (bb::knight_attacks[sqr] & pos.bb.get(PieceType::knight)[enemy]) |
            (bb::get_bishop_attack(sqr, occupancy) & BQ) |
            (bb::get_rook_attack(sqr, occupancy) & RQ) |
-           (bb::king_attacks[sqr] & pos.bb.get_kings()[enemy]);
+           (bb::king_attacks[sqr] & pos.bb.get(PieceType::king)[enemy]);
 }
 
 chess::PinBBs chess::get_pins(const Position &pos, Color color) {
     PinBBs pin_bbs;
-    bb::U64 occ = pos.bb.get_occupancy();
-    bb::U64 color_occ = pos.bb.get_every_type()[color];
-    bb::U64 king_bb = pos.bb.get_kings()[color];
+    bb::U64 occ = pos.bb.occupancy();
+    bb::U64 color_occ = pos.bb.every_type()[color];
+    bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
     assert(std::popcount(king_bb) == 1);
     sqr_t king_sqr = std::countr_zero(king_bb);
 
-    bb::U64 queen_bb = pos.bb.get_queens()[!color];
+    bb::U64 queen_bb = pos.bb.get(PieceType::queen)[!color];
 
     bb::U64 pinner = bb::xray_bishop_attack(occ, color_occ, king_sqr) &
-                     (pos.bb.get_bishops()[!color] | queen_bb);
+                     (pos.bb.get(PieceType::bishop)[!color] | queen_bb);
     pin_bbs.pinners |= pinner;
     while (pinner != 0) {
         sqr_t sqr = poplsb(pinner);
@@ -53,8 +53,8 @@ chess::PinBBs chess::get_pins(const Position &pos, Color color) {
         pin_bbs.pinned |= 1ULL << pinned_sqr;
     }
 
-    pinner =
-        bb::xray_rook_attack(occ, color_occ, king_sqr) & (pos.bb.get_rooks()[!color] | queen_bb);
+    pinner = bb::xray_rook_attack(occ, color_occ, king_sqr) &
+             (pos.bb.get(PieceType::rook)[!color] | queen_bb);
     pin_bbs.pinners |= pinner;
     while (pinner != 0) {
         sqr_t sqr = poplsb(pinner);
@@ -71,7 +71,8 @@ namespace chess {
 static inline bool is_self_check(Position &pos, const Move &move, Color color) {
     State st;
     do_move(pos, move, st);
-    bb::U64 attackers = attacks_to_sqr(pos, std::countr_zero(pos.bb.get_kings()[color]), color);
+    bb::U64 attackers =
+        attacks_to_sqr(pos, std::countr_zero(pos.bb.get(PieceType::king)[color]), color);
     undo_move(pos, move);
 
     if (attackers != 0) {
@@ -199,7 +200,7 @@ void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
         rank_sign = -1, promotion = 0, starting = 6;
     }
 
-    bb::U64 occ = pos.bb.get_occupancy();
+    bb::U64 occ = pos.bb.occupancy();
     bb::U64 sqr_bb = 1ULL << sqr;
 
     sqr_t single_push = sqr + (8 * rank_sign);
@@ -233,7 +234,7 @@ void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(pos.board[sqr].type == PieceType::knight);
 
     Color color = pos.board[sqr].color;
-    bb::U64 attack_bb = bb::knight_attacks[sqr] & ~(pos.bb.get_every_type()[color]);
+    bb::U64 attack_bb = bb::knight_attacks[sqr] & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
         Move move(sqr, to);
@@ -251,7 +252,7 @@ void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
 
     Color color = pos.board[sqr].color;
     bb::U64 attack_bb =
-        bb::get_bishop_attack(sqr, pos.bb.get_occupancy()) & ~(pos.bb.get_every_type()[color]);
+        bb::get_bishop_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
         Move move(sqr, to);
@@ -269,7 +270,7 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
 
     Color color = pos.board[sqr].color;
     bb::U64 attack_bb =
-        bb::get_rook_attack(sqr, pos.bb.get_occupancy()) & ~(pos.bb.get_every_type()[color]);
+        bb::get_rook_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
         Move move(sqr, to);
@@ -285,9 +286,9 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::queen);
 
-    bb::U64 occ = pos.bb.get_occupancy();
+    bb::U64 occ = pos.bb.occupancy();
     bb::U64 attack_bb = bb::get_rook_attack(sqr, occ) | bb::get_bishop_attack(sqr, occ);
-    attack_bb &= ~(pos.bb.get_every_type()[pos.board[sqr].color]);
+    attack_bb &= ~(pos.bb.every_type()[pos.board[sqr].color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
         Move move(sqr, to);
@@ -319,14 +320,14 @@ chess::MoveArray chess::gen_legal_moves(Position &pos) {
     Color color = pos.st->active_color;
     PinBBs pin_bb = get_pins(pos, color);
     std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
-    bb::U64 king_bb = pos.bb.get_kings()[color];
+    bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
     sqr_t king_sqr = std::countr_zero(king_bb);
 
     if (checker_count > 1) {
         assert(std::popcount(king_bb) == 1);
         gen_king_moves(pos, king_sqr, moves);
     } else [[likely]] {
-        bb::U64 occ = pos.bb.get_every_type()[color];
+        bb::U64 occ = pos.bb.every_type()[color];
         while (occ != 0) {
             sqr_t sqr = poplsb(occ);
 

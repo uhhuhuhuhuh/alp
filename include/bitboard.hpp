@@ -28,67 +28,63 @@ inline U64 xray_rook_attack(U64 occ, U64 blockers, sqr_t rook_sqr) {
 
 class PieceBB {
   private:
-    BBColorArray pawns{};
-    BBColorArray knights{};
-    BBColorArray bishops{};
-    BBColorArray rooks{};
-    BBColorArray queens{};
-    BBColorArray kings{};
-    BBColorArray every_type{};
-    bb::U64 occupancy{};
+    static constexpr std::size_t pieces_size = static_cast<uint8_t>(PieceType::king);
+    std::array<BBColorArray, pieces_size> pieces{};
+    BBColorArray m_every_type{};
+    bb::U64 m_occupancy = 0ULL;
 
     inline void reset_calculated(Color color) {
-        every_type[color] = pawns[color] | knights[color] | bishops[color] | rooks[color] |
-                            queens[color] | kings[color];
-        occupancy = every_type[Color::white] | every_type[Color::black];
+        m_every_type[color] = 0;
+        for (std::size_t i = 0; i < pieces_size; i++) {
+            m_every_type[color] |= pieces[i][color];
+        }
+        m_occupancy = m_every_type[Color::white] | m_every_type[Color::black];
     }
 
   public:
-    inline const BBColorArray &get_pawns() const { return pawns; };
-    inline const U64 get_all_pawns() const { return pawns[Color::white] | pawns[Color::black]; };
-    inline const BBColorArray &get_knights() const { return knights; };
-    inline const U64 get_all_knights() const {
-        return knights[Color::white] | knights[Color::black];
-    };
-    inline const BBColorArray &get_bishops() const { return bishops; };
-    inline const U64 get_all_bishops() const {
-        return bishops[Color::white] | bishops[Color::black];
-    };
-    inline const BBColorArray &get_rooks() const { return rooks; };
-    inline const U64 get_all_rooks() const { return rooks[Color::white] | rooks[Color::black]; };
-    inline const BBColorArray &get_queens() const { return queens; };
-    inline const U64 get_all_queens() const { return queens[Color::white] | queens[Color::black]; };
-    inline const BBColorArray &get_kings() const { return kings; };
-    inline const U64 get_all_kings() const { return kings[Color::white] | kings[Color::black]; };
-    inline const BBColorArray &get_every_type() const { return every_type; };
-    inline U64 get_occupancy() const { return occupancy; };
+    inline const BBColorArray &get(PieceType type) const {
+        return pieces[static_cast<std::size_t>(type) - 1];
+    }
+    inline U64 get_all(PieceType type) const {
+        std::size_t idx = static_cast<std::size_t>(type) - 1;
+        return pieces[idx][Color::white] | pieces[idx][Color::black];
+    }
+    inline const BBColorArray &every_type() const { return m_every_type; };
+    inline U64 occupancy() const { return m_occupancy; };
 
-    inline void set_pawns(Color color, U64 bitboard) {
-        pawns[color] = bitboard;
-        reset_calculated(color);
+    inline void place(PieceType type, Color color, sqr_t sqr) {
+        U64 sqr_bb = 1ULL << sqr;
+        pieces[static_cast<std::size_t>(type) - 1][color] |= sqr_bb;
+        m_every_type[color] |= sqr_bb;
+        m_occupancy |= sqr_bb;
     }
-    inline void set_knights(Color color, U64 bitboard) {
-        knights[color] = bitboard;
-        reset_calculated(color);
+    inline void remove(PieceType type, Color color, sqr_t sqr) {
+        U64 mask = ~(1ULL << sqr);
+        pieces[static_cast<std::size_t>(type) - 1][color] &= mask;
+        m_every_type[color] &= mask;
+        m_occupancy &= mask;
     }
-    inline void set_bishops(Color color, U64 bitboard) {
-        bishops[color] = bitboard;
-        reset_calculated(color);
+
+    inline void move(PieceType type, Color color, sqr_t from, sqr_t to) {
+        U64 to_from_bb = (1ULL << from) | (1ULL << to);
+        pieces[static_cast<std::size_t>(type) - 1][color] ^= to_from_bb;
+        m_every_type[color] ^= to_from_bb;
+        m_occupancy ^= to_from_bb;
     }
-    void set_rooks(Color color, U64 bitboard) {
-        rooks[color] = bitboard;
-        reset_calculated(color);
+    inline void capture(
+        PieceType type, Color color, sqr_t from, PieceType captured_type, Color capture_color,
+        sqr_t to
+    ) {
+        U64 from_bb = 1ULL << from;
+        U64 to_bb = 1ULL << to;
+        U64 to_from_bb = from_bb | to_bb;
+
+        pieces[static_cast<std::size_t>(type) - 1][color] ^= to_from_bb;
+        m_every_type[color] ^= to_from_bb;
+        pieces[static_cast<std::size_t>(captured_type) - 1][capture_color] &= ~to_bb;
+        m_every_type[capture_color] &= ~to_bb;
+
+        m_occupancy ^= from_bb;
     }
-    void set_queens(Color color, U64 bitboard) {
-        queens[color] = bitboard;
-        reset_calculated(color);
-    }
-    void set_kings(Color color, U64 bitboard) {
-        kings[color] = bitboard;
-        reset_calculated(color);
-    }
-    void set_bitboard(PieceType type, Color color, U64 bitboard);
-    void set_or_bitboard(PieceType type, Color color, bb::U64 bitboard);
-    void set_and_bitboard(PieceType type, Color color, bb::U64 bitboard);
 };
 } // namespace chess::bb

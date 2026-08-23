@@ -7,17 +7,6 @@
 namespace chess::bb {
 using U64 = uint64_t;
 
-enum File {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-};
-
 constexpr std::array<U64, 8> files = {
     0x101010101010101ULL,
     0x202020202020202ULL,

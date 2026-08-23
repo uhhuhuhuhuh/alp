@@ -1,15 +1,17 @@
 #pragma once
 
+#include <cctype>
+#include <cstdint>
 namespace chess {
 // An enum used to designate the type of a piece
-enum class PieceType : char {
-    none = '-',
-    pawn = 'p',
-    knight = 'n',
-    bishop = 'b',
-    rook = 'r',
-    queen = 'q',
-    king = 'k',
+enum class PieceType : uint8_t {
+    none,
+    pawn,
+    knight,
+    bishop,
+    rook,
+    queen,
+    king,
 };
 
 // An enum used to designate the color of a piece and a game's active color
@@ -26,8 +28,8 @@ inline Color operator!(Color color) {
     return Color::white;
 }
 
-// A struct used to contain the essential data of a chess piece including its type and color
-struct Piece {
+// A class used to contain the essential data of a chess piece including its type and color
+class Piece {
   public:
     PieceType type;
     Color color;
@@ -38,5 +40,24 @@ struct Piece {
     // Piece constructor
     inline Piece(PieceType type_, Color color_, bool can_castle_ = false)
         : type(type_), color(color_) {}
+
+    inline Piece(char c) {
+        color = std::isupper(c) ? Color::white : Color::black;
+
+        switch (std::tolower(c)) {
+        case 'p': type = PieceType::pawn; break;
+        case 'n': type = PieceType::knight; break;
+        case 'b': type = PieceType::bishop; break;
+        case 'r': type = PieceType::rook; break;
+        case 'q': type = PieceType::queen; break;
+        case 'k': type = PieceType::king; break;
+        default:  type = PieceType::none; break;
+        }
+    }
+
+    inline char format() const {
+        constexpr char chars[] = "-pnbrqk-PNBRQK";
+        return chars[static_cast<int>(type) + (color == Color::white ? 7 : 0)];
+    }
 };
 } // namespace chess
