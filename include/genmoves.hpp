@@ -4,9 +4,8 @@
 #include "position.hpp"
 #include "square.hpp"
 
-#include <vector>
-
 namespace chess {
+enum class GenType { pseudo, legal };
 // returns a bitboard of pieces attacking the given square
 bb::U64 attacks_to_sqr(const Position &pos, sqr_t sqr, Color attacked_color);
 // returns a bitboard of pieces attacking the king
@@ -19,13 +18,18 @@ struct PinBBs {
 };
 PinBBs get_pins(const Position &pos, Color color);
 
-void gen_pawn_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
-void gen_knight_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
-void gen_bishop_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
-void gen_rook_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
-void gen_queen_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
-void gen_king_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
+template <GenType gen_type>
+void gen_pawn_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+template <GenType gen_type>
+void gen_knight_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+template <GenType gen_type>
+void gen_bishop_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+template <GenType gen_type>
+void gen_rook_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+template <GenType gen_type>
+void gen_queen_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+template <GenType gen_type> void gen_king_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
 // Appends all legal moves for the active color 'moves'.
 // Does not clear 'moves'.
-MoveArray gen_legal_moves(Position &pos);
+template <GenType gen_type> MoveArray gen_moves(Position &pos);
 } // namespace chess

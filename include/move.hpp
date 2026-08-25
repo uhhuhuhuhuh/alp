@@ -2,6 +2,7 @@
 
 #include "square.hpp"
 #include <cassert>
+#include <cstdint>
 
 namespace chess {
 enum MoveFlag {
@@ -76,9 +77,27 @@ class MoveArray {
         data[len] = move;
         len++;
     }
+    inline constexpr chess::Move &
+    emplace_back(sqr_t from = -1, sqr_t to = -1, uint8_t flags = MoveFlag::quiet) {
+        assert(len < move_array_size);
+        data[len].from = from;
+        data[len].to = to;
+        data[len].flags = flags;
+        len++;
+        return data[len - 1];
+    }
     inline constexpr void pop_back() {
         assert(len > 0);
         len--;
+    }
+
+    inline constexpr chess::Move &back() {
+        assert(len > 0);
+        return data[len - 1];
+    }
+    inline constexpr const chess::Move &back() const {
+        assert(len > 0);
+        return data[len - 1];
     }
 
     inline constexpr std::size_t size() const { return len; }

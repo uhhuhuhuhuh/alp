@@ -68,6 +68,46 @@ chess::PinBBs chess::get_pins(const Position &pos, Color color) {
 }
 
 namespace chess {
+static bool is_pseudo_move_non_king_legal(Position &pos, const Move &move, const PinBBs &pin_bb) {
+    bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
+    std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
+
+    if (std::popcount(pos.st->checks_bb) == 1 && is_pinned) {
+        return false;
+    }
+
+    PieceType type = pos.board[move.from].type;
+    Color color = pos.board[move.from].color;
+    bb::U64 to_bb = 1ULL << move.to;
+    if (checker_count == 1) {
+        bool capture_checker = (to_bb & pos.st->checks_bb) != 0;
+
+        bb::U64 ep_bb = 0ULL;
+        if (pos.st->en_passant_sqr != -1) {
+            ep_bb = 1ULL << (pos.st->en_passant_sqr + (color == Color::white ? 8 : -8));
+        }
+        bool ep_checker = type == PieceType::pawn && ((to_bb & ep_bb) != 0);
+
+        sqr_t checker_bb = std::countr_zero(pos.st->checks_bb);
+        sqr_t king_sqr = std::countr_zero(pos.bb.get(PieceType::king)[color]);
+        bool block_checker = (to_bb & bb::slider_between[checker_bb][king_sqr]) != 0;
+
+        if (capture_checker || ep_checker || block_checker) {
+            return true;
+        }
+        return false;
+    }
+
+    if (is_pinned) {
+        if (((1ULL << move.to) & pin_bb.pin_rays[move.from]) != 0) {
+            return true;
+        }
+        return false;
+    }
+
+    return true;
+}
+
 static inline bool is_self_check(Position &pos, const Move &move, Color color) {
     State st;
     do_move(pos, move, st);
@@ -82,70 +122,50 @@ static inline bool is_self_check(Position &pos, const Move &move, Color color) {
     return false;
 }
 
-static bool is_capture_pawn_move_legal(Position &pos, Move &move) {
-    const Piece &from_piece = pos.board[move.from], to_piece = pos.board[move.to];
-    assert(from_piece.type == PieceType::pawn);
-
-    move.flags = MoveFlag::capture;
-
-    bool is_white = from_piece.color == Color::white;
-    rank_t rank_sign = 1;
-    if (!is_white) {
-        rank_sign = -1;
-    }
-
-    if (to_piece.type != PieceType::none && to_piece.color == from_piece.color) {
-        return false;
-    }
-
-    sqr_t en_passant_sqr = move.to + (rank_sign * -8);
-    if (to_piece.type == PieceType::none) {
-        if (en_passant_sqr != pos.st->en_passant_sqr) {
-            return false;
-        }
-        move.flags = MoveFlag::ep;
+static bool is_capture_pawn_move_legal(
+    const Position &pos, sqr_t to, sqr_t dir, uint8_t &flags, bb::U64 promotion_rank
+) {
+    if (to - dir == pos.st->en_passant_sqr) {
+        flags = MoveFlag::ep;
         return true;
     }
 
-    bb::U64 to_bb = 1ULL << move.to;
-    if (((to_bb & bb::ranks[7]) != 0 && is_white) || ((to_bb & bb::ranks[0]) != 0 && !is_white)) {
-        move.flags = MoveFlag::promotion;
+    if (pos.board[to].type == PieceType::none) {
+        return false;
+    }
+
+    flags = MoveFlag::capture;
+    if (((1ULL << to) & promotion_rank) != 0) {
+        flags = MoveFlag::promotion;
     }
 
     return true;
 }
 
-static bool is_king_move_legal(Position &pos, Move &move) {
-    if (move.to > 63 || move.from > 63 || move.to < 0 || move.from < 0) {
-        return false;
+template <GenType gen_type>
+static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveArray &moves) {
+    if (to > 63 || from > 63 || to < 0 || from < 0) {
+        return;
     }
 
-    const Piece &from_piece = pos.board[move.from], to_piece = pos.board[move.to];
+    const Piece &from_piece = pos.board[from], to_piece = pos.board[to];
     assert(from_piece.type == PieceType::king);
 
     if (to_piece.type != PieceType::none && to_piece.color == from_piece.color) {
-        return false;
+        return;
     }
 
-    rank_t from_rank = move.from / 8, to_rank = move.to / 8;
-    file_t from_file = move.from % 8, to_file = move.to % 8;
-
+    rank_t from_rank = from / 8, to_rank = to / 8;
+    file_t from_file = from % 8, to_file = to % 8;
     file_t file_dist = abs(from_file - to_file);
     rank_t rank_dist = abs(from_rank - to_rank);
 
     if (rank_dist > 1 || file_dist > 2) {
-        return false;
-    }
-
-    if (file_dist < 2) {
-        if (pos.board[move.to].type != PieceType::none) {
-            move.flags = capture;
-        }
-        return true;
+        return;
     }
 
     if (pos.st->checks_bb != 0) {
-        return false;
+        return;
     }
 
     const bool is_white = from_piece.color == Color::white, queen_side = to_file < from_file;
@@ -153,83 +173,100 @@ static bool is_king_move_legal(Position &pos, Move &move) {
                               ? (is_white ? CastleRights::white_queen : CastleRights::black_queen)
                               : (is_white ? CastleRights::white_king : CastleRights::black_king);
     if ((pos.st->castle_rights & rights) == 0) {
-        return false;
+        return;
     }
 
     sqr_t rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
     assert(
-        move.from == (is_white ? e1 : e8) && pos.board[rook_sqr].type == PieceType::rook &&
+        from == (is_white ? e1 : e8) && pos.board[rook_sqr].type == PieceType::rook &&
         pos.board[rook_sqr].color == from_piece.color
     );
 
     sqr_t step = queen_side ? -1 : 1;
     bool passed_to = false;
-    for (sqr_t sqr = move.from + step; sqr != rook_sqr; sqr += step) {
+    for (sqr_t sqr = from + step; sqr != rook_sqr; sqr += step) {
         if (pos.board[sqr].type != PieceType::none) {
-            return false;
+            return;
         }
-        if (sqr == move.to) {
+        if (sqr == to) {
             passed_to = true;
         }
         if (!passed_to && attacks_to_sqr(pos, sqr, from_piece.color) != 0) {
-            return false;
+            return;
         }
     }
 
-    move.flags = MoveFlag::castle;
-    return true;
-}
-
-inline static void push_king_move(Position &pos, sqr_t from, sqr_t to, MoveArray &moves) {
-    Move move(from, to);
-
-    if (is_king_move_legal(pos, move)) {
-        moves.push_back(move);
+    Move &move = moves.emplace_back(from, to, MoveFlag::castle);
+    if constexpr (gen_type == GenType::legal) {
+        if (is_self_check(pos, move, from_piece.color)) {
+            moves.pop_back();
+        }
     }
 }
 } // namespace chess
-void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
+
+template <chess::GenType gen_type>
+void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveArray &moves, const PinBBs &pins) {
     assert(sqr >= 0 && sqr < 64);
 
     const Piece &piece = pos.board[sqr];
     assert(piece.type == PieceType::pawn);
     Color color = piece.color;
 
-    rank_t rank_sign = 1, promotion = 7, starting = 1;
+    sqr_t dir = 8, promotion = 7, starting = 1;
     if (piece.color == Color::black) {
-        rank_sign = -1, promotion = 0, starting = 6;
+        dir = -8, promotion = 0, starting = 6;
     }
 
     bb::U64 occ = pos.bb.occupancy();
     bb::U64 sqr_bb = 1ULL << sqr;
 
-    sqr_t single_push = sqr + (8 * rank_sign);
+    sqr_t single_push = sqr + dir;
     bool is_single_push_empty = ((1ULL << single_push) & occ) == 0;
-    Move move(sqr, single_push);
+
     if (is_single_push_empty) {
-        // single push
-        if (((1ULL << single_push) & bb::ranks[promotion]) != 0) {
+        Move &move = moves.emplace_back(sqr, single_push);
+        if (((1ULL << move.to) & bb::ranks[promotion]) != 0) {
             move.flags = MoveFlag::promotion;
         }
-        moves.push_back(move);
-
-        // double push
-        move.to = sqr + (16 * rank_sign), move.flags = MoveFlag::quiet;
-        if ((sqr_bb & bb::ranks[starting]) != 0 && ((1ULL << move.to) & occ) == 0) {
-            moves.push_back(move);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
+        }
+    }
+    sqr_t double_push = sqr + (2 * dir);
+    if (is_single_push_empty && (sqr_bb & bb::ranks[starting]) != 0 &&
+        ((1ULL << double_push) & occ) == 0) {
+        Move &move = moves.emplace_back(sqr, double_push);
+        if (((1ULL << move.to) & bb::ranks[promotion]) != 0) {
+            move.flags = MoveFlag::promotion;
+        }
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
         }
     }
 
-    bb::U64 attacks = bb::pawn_attacks[color][sqr];
+    bb::U64 attacks = bb::pawn_attacks[color][sqr] & ~(pos.bb.every_type()[color]);
     while (attacks != 0) {
-        move.to = poplsb(attacks);
-        if (is_capture_pawn_move_legal(pos, move)) {
-            moves.push_back(move);
+        uint8_t flags = MoveFlag::capture;
+        sqr_t to = poplsb(attacks);
+        if (!is_capture_pawn_move_legal(pos, to, dir, flags, bb::ranks[promotion])) {
+            continue;
+        }
+        Move &move = moves.emplace_back(sqr, to, flags);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
         }
     }
 }
 
-void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
+template <chess::GenType gen_type>
+void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves, const PinBBs &pins) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::knight);
 
@@ -237,16 +274,20 @@ void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     bb::U64 attack_bb = bb::knight_attacks[sqr] & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move move(sqr, to);
+        Move &move = moves.emplace_back(sqr, to);
         if (pos.board[to].type != PieceType::none) {
             move.flags = MoveFlag::capture;
         }
-
-        moves.push_back(move);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
+        }
     }
 }
 
-void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
+template <chess::GenType gen_type>
+void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves, const PinBBs &pins) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::bishop);
 
@@ -255,16 +296,20 @@ void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
         bb::get_bishop_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move move(sqr, to);
+        Move &move = moves.emplace_back(sqr, to);
         if (pos.board[to].type != PieceType::none) {
             move.flags = MoveFlag::capture;
         }
-
-        moves.push_back(move);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
+        }
     }
 }
 
-void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
+template <chess::GenType gen_type>
+void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves, const PinBBs &pins) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::rook);
 
@@ -273,16 +318,20 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
         bb::get_rook_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move move(sqr, to);
+        Move &move = moves.emplace_back(sqr, to);
         if (pos.board[to].type != PieceType::none) {
             move.flags = MoveFlag::capture;
         }
-
-        moves.push_back(move);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
+        }
     }
 }
 
-void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
+template <chess::GenType gen_type>
+void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves, const PinBBs &pins) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::queen);
 
@@ -291,31 +340,42 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     attack_bb &= ~(pos.bb.every_type()[pos.board[sqr].color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move move(sqr, to);
+        Move &move = moves.emplace_back(sqr, to);
         if (pos.board[to].type != PieceType::none) {
             move.flags = MoveFlag::capture;
         }
-
-        moves.push_back(move);
+        if constexpr (gen_type == GenType::legal) {
+            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
+                moves.pop_back();
+            }
+        }
     }
 }
 
+template <chess::GenType gen_type>
 void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::king);
-    push_king_move(pos, sqr, sqr + 1, moves);
-    push_king_move(pos, sqr, sqr - 1, moves);
-    push_king_move(pos, sqr, sqr + 8, moves);
-    push_king_move(pos, sqr, sqr - 8, moves);
-    push_king_move(pos, sqr, sqr + 7, moves);
-    push_king_move(pos, sqr, sqr - 7, moves);
-    push_king_move(pos, sqr, sqr + 9, moves);
-    push_king_move(pos, sqr, sqr - 9, moves);
-    push_king_move(pos, sqr, sqr + 2, moves);
-    push_king_move(pos, sqr, sqr - 2, moves);
+
+    Color color = pos.board[sqr].color;
+    bb::U64 attack_bb = bb::king_attacks[sqr] & ~(pos.bb.every_type()[color]);
+    while (attack_bb != 0) {
+        sqr_t to = poplsb(attack_bb);
+        Move &move = moves.emplace_back(sqr, to);
+        if (pos.board[to].type != PieceType::none) {
+            move.flags = MoveFlag::capture;
+        }
+        if constexpr (gen_type == GenType::legal) {
+            if (is_self_check(pos, move, color)) {
+                moves.pop_back();
+            }
+        }
+    }
+    push_king_castle<gen_type>(pos, sqr, sqr + 2, moves);
+    push_king_castle<gen_type>(pos, sqr, sqr - 2, moves);
 }
 
-chess::MoveArray chess::gen_legal_moves(Position &pos) {
+template <chess::GenType gen_type> chess::MoveArray chess::gen_moves(Position &pos) {
     MoveArray moves;
     Color color = pos.st->active_color;
     PinBBs pin_bb = get_pins(pos, color);
@@ -325,67 +385,26 @@ chess::MoveArray chess::gen_legal_moves(Position &pos) {
 
     if (checker_count > 1) {
         assert(std::popcount(king_bb) == 1);
-        gen_king_moves(pos, king_sqr, moves);
+        gen_king_moves<gen_type>(pos, king_sqr, moves);
     } else [[likely]] {
         bb::U64 occ = pos.bb.every_type()[color];
         while (occ != 0) {
             sqr_t sqr = poplsb(occ);
 
             switch (pos.board[sqr].type) {
-            case PieceType::pawn:   gen_pawn_moves(pos, sqr, moves); break;
-            case PieceType::knight: gen_knight_moves(pos, sqr, moves); break;
-            case PieceType::bishop: gen_bishop_moves(pos, sqr, moves); break;
-            case PieceType::rook:   gen_rook_moves(pos, sqr, moves); break;
-            case PieceType::queen:  gen_queen_moves(pos, sqr, moves); break;
-            case PieceType::king:   gen_king_moves(pos, sqr, moves); break;
+            case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
             default:                break;
             }
         }
     }
 
-    MoveArray legal;
-    for (const Move &move : moves) {
-        bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
-        if (checker_count == 1 && is_pinned) {
-            continue;
-        }
-
-        PieceType type = pos.board[move.from].type;
-        if (type == PieceType::king) {
-            if (!is_self_check(pos, move, color)) {
-                legal.push_back(move);
-            }
-            continue;
-        }
-
-        bb::U64 to_bb = 1ULL << move.to;
-        if (checker_count == 1) {
-            bool capture_checker = (to_bb & pos.st->checks_bb) != 0;
-
-            bb::U64 ep_bb = 0ULL;
-            if (pos.st->en_passant_sqr != -1) {
-                ep_bb = 1ULL << (pos.st->en_passant_sqr + (color == Color::white ? 8 : -8));
-            }
-            bool ep_checker = type == PieceType::pawn && ((to_bb & ep_bb) != 0);
-
-            sqr_t checker_bb = std::countr_zero(pos.st->checks_bb);
-            bool block_checker = (to_bb & bb::slider_between[checker_bb][king_sqr]) != 0;
-
-            if (capture_checker || ep_checker || block_checker) {
-                legal.push_back(move);
-            }
-            continue;
-        }
-
-        if (is_pinned) {
-            if ((to_bb & pin_bb.pin_rays[move.from]) != 0) {
-                legal.push_back(move);
-            }
-            continue;
-        }
-
-        legal.push_back(move);
-    }
-
-    return legal;
+    return moves;
 }
+
+template chess::MoveArray chess::gen_moves<chess::GenType::legal>(Position &pos);
+template chess::MoveArray chess::gen_moves<chess::GenType::pseudo>(Position &pos);

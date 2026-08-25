@@ -4,16 +4,45 @@
 #include "piece.hpp"
 #include "square.hpp"
 
+#include <ostream>
+
 #include <cstdint>
 
 namespace chess::bb {
 using U64 = uint64_t;
 using BBColorArray = ColorArray<U64>;
 
-void output_bb(U64 bitboard, std::ostream &out);
+inline void output_bb(U64 bitboard, std::ostream &out) {
+    // irank = inverted rank
+    for (rank_t irank = 0; irank < 8; irank++) {
+        rank_t rank = 7 - irank;
+        out << rank + 1 << "  ";
+        for (file_t file = 0; file < 8; file++) {
+            sqr_t sqr = rank * 8 + file;
+            if (bitboard & (1ULL << sqr)) {
+                out << "1 ";
+                continue;
+            }
+            out << "0 ";
+        }
+        out << '\n';
+    }
+    out << '\n';
+    out << "   A B C D E F G H\n";
+}
 
-U64 get_bishop_attack(sqr_t sqr, U64 occ);
-U64 get_rook_attack(sqr_t sqr, U64 occ);
+inline U64 get_bishop_attack(sqr_t sqr, U64 occ) {
+    occ &= bishop_tbl[sqr].mask;
+    occ *= bishop_tbl[sqr].magic;
+    occ >>= (64 - bishop_bit_idxs[sqr]);
+    return bishop_attacks[bishop_offsets[sqr] + occ];
+}
+inline U64 get_rook_attack(sqr_t sqr, U64 occ) {
+    occ &= rook_tbl[sqr].mask;
+    occ *= rook_tbl[sqr].magic;
+    occ >>= (64 - rook_bit_idxs[sqr]);
+    return rook_attacks[rook_offsets[sqr] + occ];
+}
 
 inline U64 xray_bishop_attack(U64 occ, U64 blockers, sqr_t bishop_sqr) {
     U64 attacks = get_bishop_attack(bishop_sqr, occ);

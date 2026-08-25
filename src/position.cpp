@@ -6,6 +6,7 @@
 #include <bit>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -426,7 +427,7 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
     if (depth >= max) {
         return 0;
     }
-    auto moves = gen_legal_moves(pos);
+    auto moves = gen_moves<GenType::legal>(pos);
 
     std::string indent = "";
     for (uint32_t i = 0; i < depth; i++) {
@@ -463,18 +464,19 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
     return move_count;
 }
 
-template <bool root> uint64_t perf_recursive(Position &pos, uint32_t depth, std::ostream &out) {
+template <bool root> uint64_t perft_recursive(Position &pos, uint32_t depth, std::ostream &out) {
     uint64_t count = 0, nodes = 0;
     const bool leaf = depth == 2;
 
-    for (const Move &move : gen_legal_moves(pos)) {
+    for (const Move &move : gen_moves<GenType::legal>(pos)) {
         if (root && depth <= 1) {
             count = 1;
             nodes++;
         } else {
             State st;
             do_move(pos, move, st);
-            count = leaf ? gen_legal_moves(pos).size() : perf_recursive<false>(pos, depth - 1, out);
+            count = leaf ? gen_moves<GenType::legal>(pos).size()
+                         : perft_recursive<false>(pos, depth - 1, out);
             nodes += count;
             undo_move(pos, move);
         }
@@ -488,7 +490,7 @@ template <bool root> uint64_t perf_recursive(Position &pos, uint32_t depth, std:
 } // namespace chess
 
 uint64_t chess::perft(Position &state, uint32_t depth, std::ostream &out) {
-    return perf_recursive<true>(state, depth, out);
+    return perft_recursive<true>(state, depth, out);
 }
 
 uint64_t chess::perft_out(Position &state, uint32_t depth, std::ostream &out) {
