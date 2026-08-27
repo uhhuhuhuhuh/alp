@@ -150,17 +150,9 @@ template <GenType gen_type, typename legal_fn>
 static inline void
 push_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveArray &moves, legal_fn is_legal) {
     if constexpr (gen_type == GenType::legal) {
-        if (moves.will_resize()) {
-            Move move(from, to, flags);
-            if (is_legal(pos, move)) {
-                moves.push_back(move);
-            }
-            return;
-        }
-
-        Move &move = moves.emplace_back(from, to, flags);
-        if (!is_legal(pos, move)) {
-            moves.pop_back();
+        Move move(from, to, flags);
+        if (is_legal(pos, move)) {
+            moves.push_back(move);
         }
         return;
     }
