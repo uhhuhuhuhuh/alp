@@ -4,9 +4,8 @@
 #include "piece.hpp"
 #include "square.hpp"
 
-#include <ostream>
-
 #include <cstdint>
+#include <ostream>
 
 namespace chess::bb {
 using U64 = uint64_t;
@@ -101,7 +100,7 @@ class PieceBB {
         m_occupancy ^= to_from_bb;
     }
     inline void capture(
-        PieceType type, Color color, sqr_t from, PieceType captured_type, Color capture_color,
+        PieceType type, Color color, sqr_t from, PieceType captured_type, Color captured_color,
         sqr_t to
     ) {
         U64 from_bb = 1ULL << from;
@@ -110,8 +109,8 @@ class PieceBB {
 
         pieces[static_cast<std::size_t>(type) - 1][color] ^= to_from_bb;
         m_every_type[color] ^= to_from_bb;
-        pieces[static_cast<std::size_t>(captured_type) - 1][capture_color] &= ~to_bb;
-        m_every_type[capture_color] &= ~to_bb;
+        pieces[static_cast<std::size_t>(captured_type) - 1][captured_color] &= ~to_bb;
+        m_every_type[captured_color] &= ~to_bb;
 
         m_occupancy ^= from_bb;
     }

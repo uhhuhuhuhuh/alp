@@ -7,6 +7,7 @@
 #include "square.hpp"
 #include <bit>
 #include <cassert>
+#include <cstdint>
 
 // returns index of least significant bit.
 static inline std::size_t poplsb(chess::bb::U64 &x) {
@@ -83,8 +84,8 @@ static bool is_pseudo_move_non_king_legal(Position &pos, const Move &move, const
         bool capture_checker = (to_bb & pos.st->checks_bb) != 0;
 
         bb::U64 ep_bb = 0ULL;
-        if (pos.st->en_passant_sqr != -1) {
-            ep_bb = 1ULL << (pos.st->en_passant_sqr + (color == Color::white ? 8 : -8));
+        if (pos.st->ep_sqr != -1) {
+            ep_bb = 1ULL << (pos.st->ep_sqr + (color == Color::white ? 8 : -8));
         }
         bool ep_checker = type == PieceType::pawn && ((to_bb & ep_bb) != 0);
 
@@ -108,12 +109,35 @@ static bool is_pseudo_move_non_king_legal(Position &pos, const Move &move, const
     return true;
 }
 
+static inline Piece do_move_bb(Position &pos, const Move &move) {
+    PieceType type = pos.board[move.from].type;
+    Color color = pos.board[move.from].color;
+
+    switch (move.flags) {
+    case MoveFlag::capture: {
+        PieceType captured_type = pos.board[move.to].type;
+        Color captured_color = pos.board[move.to].color;
+        pos.bb.capture(type, color, move.from, captured_type, captured_color, move.to);
+        return pos.board[move.to];
+    }
+    default: pos.bb.move(type, color, move.from, move.to); return Piece();
+    }
+}
+static inline void undo_move_bb(Position &pos, const Move &move, const Piece &captured) {
+    PieceType type = pos.board[move.from].type;
+    Color color = pos.board[move.from].color;
+
+    pos.bb.move(type, color, move.to, move.from);
+    if (captured.type != PieceType::none) {
+        pos.bb.place(captured.type, captured.color, move.to);
+    }
+}
 static inline bool is_self_check(Position &pos, const Move &move, Color color) {
     State st;
-    do_move(pos, move, st);
+    Piece captured = do_move_bb(pos, move);
     bb::U64 attackers =
         attacks_to_sqr(pos, std::countr_zero(pos.bb.get(PieceType::king)[color]), color);
-    undo_move(pos, move);
+    undo_move_bb(pos, move, captured);
 
     if (attackers != 0) {
         return true;
@@ -122,24 +146,44 @@ static inline bool is_self_check(Position &pos, const Move &move, Color color) {
     return false;
 }
 
-static bool is_capture_pawn_move_legal(
-    const Position &pos, sqr_t to, sqr_t dir, uint8_t &flags, bb::U64 promotion_rank
+template <GenType gen_type, typename legal_fn>
+static inline void
+push_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveArray &moves, legal_fn is_legal) {
+    if constexpr (gen_type == GenType::legal) {
+        if (moves.will_resize()) {
+            Move move(from, to, flags);
+            if (is_legal(pos, move)) {
+                moves.push_back(move);
+            }
+            return;
+        }
+
+        Move &move = moves.emplace_back(from, to, flags);
+        if (!is_legal(pos, move)) {
+            moves.pop_back();
+        }
+        return;
+    }
+
+    moves.emplace_back(from, to, flags);
+}
+
+template <GenType gen_type>
+static inline void
+push_king_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveArray &moves) {
+    Color color = pos.board[from].color;
+
+    push_move<gen_type>(pos, from, to, flags, moves, [color](Position &pos, Move &move) {
+        return !is_self_check(pos, move, color);
+    });
+}
+template <GenType gen_type>
+static inline void push_non_king_move(
+    Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveArray &moves, const PinBBs &pins
 ) {
-    if (to - dir == pos.st->en_passant_sqr) {
-        flags = MoveFlag::ep;
-        return true;
-    }
-
-    if (pos.board[to].type == PieceType::none) {
-        return false;
-    }
-
-    flags = MoveFlag::capture;
-    if (((1ULL << to) & promotion_rank) != 0) {
-        flags = MoveFlag::promotion;
-    }
-
-    return true;
+    push_move<gen_type>(pos, from, to, flags, moves, [&pins](Position &pos, Move &move) {
+        return is_pseudo_move_non_king_legal(pos, move, pins);
+    });
 }
 
 template <GenType gen_type>
@@ -196,12 +240,7 @@ static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveArray &mov
         }
     }
 
-    Move &move = moves.emplace_back(from, to, MoveFlag::castle);
-    if constexpr (gen_type == GenType::legal) {
-        if (is_self_check(pos, move, from_piece.color)) {
-            moves.pop_back();
-        }
-    }
+    push_king_move<gen_type>(pos, from, to, MoveFlag::castle, moves);
 }
 } // namespace chess
 
@@ -222,46 +261,26 @@ void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveArray &moves, const Pin
     bb::U64 sqr_bb = 1ULL << sqr;
 
     sqr_t single_push = sqr + dir;
-    bool is_single_push_empty = ((1ULL << single_push) & occ) == 0;
+    bb::U64 single_push_bb = (1ULL << single_push);
+    bool is_single_push_empty = (single_push_bb & occ) == 0;
 
     if (is_single_push_empty) {
-        Move &move = moves.emplace_back(sqr, single_push);
-        if (((1ULL << move.to) & bb::ranks[promotion]) != 0) {
-            move.flags = MoveFlag::promotion;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag =
+            (single_push_bb & bb::ranks[promotion]) != 0 ? MoveFlag::promotion : MoveFlag::quiet;
+        push_non_king_move<gen_type>(pos, sqr, single_push, flag, moves, pins);
     }
     sqr_t double_push = sqr + (2 * dir);
     if (is_single_push_empty && (sqr_bb & bb::ranks[starting]) != 0 &&
         ((1ULL << double_push) & occ) == 0) {
-        Move &move = moves.emplace_back(sqr, double_push);
-        if (((1ULL << move.to) & bb::ranks[promotion]) != 0) {
-            move.flags = MoveFlag::promotion;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        push_non_king_move<gen_type>(pos, sqr, double_push, MoveFlag::ep_victim, moves, pins);
     }
 
-    bb::U64 attacks = bb::pawn_attacks[color][sqr] & ~(pos.bb.every_type()[color]);
+    bb::U64 ep_bb = pos.st->ep_sqr == -1 ? 0ULL : (1ULL << (pos.st->ep_sqr + dir));
+    bb::U64 attacks = bb::pawn_attacks[color][sqr] & (pos.bb.every_type()[!color] | ep_bb);
     while (attacks != 0) {
-        uint8_t flags = MoveFlag::capture;
         sqr_t to = poplsb(attacks);
-        if (!is_capture_pawn_move_legal(pos, to, dir, flags, bb::ranks[promotion])) {
-            continue;
-        }
-        Move &move = moves.emplace_back(sqr, to, flags);
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type != PieceType::none ? MoveFlag::capture : MoveFlag::ep;
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
     }
 }
 
@@ -274,15 +293,8 @@ void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveArray &moves, const P
     bb::U64 attack_bb = bb::knight_attacks[sqr] & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move &move = moves.emplace_back(sqr, to);
-        if (pos.board[to].type != PieceType::none) {
-            move.flags = MoveFlag::capture;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
     }
 }
 
@@ -296,15 +308,8 @@ void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveArray &moves, const P
         bb::get_bishop_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move &move = moves.emplace_back(sqr, to);
-        if (pos.board[to].type != PieceType::none) {
-            move.flags = MoveFlag::capture;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
     }
 }
 
@@ -318,15 +323,8 @@ void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveArray &moves, const Pin
         bb::get_rook_attack(sqr, pos.bb.occupancy()) & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move &move = moves.emplace_back(sqr, to);
-        if (pos.board[to].type != PieceType::none) {
-            move.flags = MoveFlag::capture;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
     }
 }
 
@@ -340,15 +338,8 @@ void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveArray &moves, const Pi
     attack_bb &= ~(pos.bb.every_type()[pos.board[sqr].color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move &move = moves.emplace_back(sqr, to);
-        if (pos.board[to].type != PieceType::none) {
-            move.flags = MoveFlag::capture;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (!is_pseudo_move_non_king_legal(pos, move, pins)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
     }
 }
 
@@ -361,15 +352,8 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveArray &moves) {
     bb::U64 attack_bb = bb::king_attacks[sqr] & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
-        Move &move = moves.emplace_back(sqr, to);
-        if (pos.board[to].type != PieceType::none) {
-            move.flags = MoveFlag::capture;
-        }
-        if constexpr (gen_type == GenType::legal) {
-            if (is_self_check(pos, move, color)) {
-                moves.pop_back();
-            }
-        }
+        uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
+        push_king_move<gen_type>(pos, sqr, to, flag, moves);
     }
     push_king_castle<gen_type>(pos, sqr, sqr + 2, moves);
     push_king_castle<gen_type>(pos, sqr, sqr - 2, moves);

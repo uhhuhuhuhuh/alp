@@ -61,10 +61,10 @@ void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
     } while (static_cast<unsigned int>(castle_rights) != 0);
 
     out << ' ';
-    if (pos.st->en_passant_sqr == -1) {
+    if (pos.st->ep_sqr == -1) {
         out << '-';
     } else {
-        out << sqr_format(pos.st->en_passant_sqr + (pos.st->active_color == Color::white ? 8 : -8));
+        out << sqr_format(pos.st->ep_sqr + (pos.st->active_color == Color::white ? 8 : -8));
     }
 
     out << ' ' << pos.st->halfmove_clock;
@@ -234,9 +234,9 @@ std::optional<chess::Position> chess::fen_parser(std::string_view sv, State &st)
             break;
         }
         case on_t::en_passant:
-            pos.st->en_passant_sqr = parse_sqr(sub_str);
-            if (pos.st->en_passant_sqr != -1) {
-                pos.st->en_passant_sqr += (pos.st->active_color == Color::white ? 8 : -8);
+            pos.st->ep_sqr = parse_sqr(sub_str);
+            if (pos.st->ep_sqr != -1) {
+                pos.st->ep_sqr += (pos.st->active_color == Color::white ? 8 : -8);
             }
             break;
         case on_t::halfmove_clock:
@@ -346,7 +346,7 @@ static inline void move_piece(Position &pos, sqr_t from, sqr_t to, uint8_t flag)
 void chess::do_move(Position &pos, const Move &move, State &st) {
     st = *pos.st;
     st.prev = pos.st;
-    st.en_passant_sqr = -1;
+    st.ep_sqr = -1;
     st.captured_piece = pos.board[move.to];
     st.active_color = !pos.st->active_color;
     pos.game_ply++;
@@ -354,26 +354,24 @@ void chess::do_move(Position &pos, const Move &move, State &st) {
 
     Piece &from_piece = pos.board[move.from];
 
-    file_t from_file = move.from % 8;
-    rank_t from_rank = move.from / 8;
-    file_t to_file = move.to % 8;
-    rank_t rank_dist = abs(move.from / 8 - move.to / 8);
-
-    const bool is_from_white = from_piece.color == Color::white;
-    if (move.flags == MoveFlag::ep) {
-        rank_t rank_sign = is_from_white ? 1 : -1;
+    switch (move.flags) {
+    case MoveFlag::ep: {
+        rank_t rank_sign = from_piece.color == Color::white ? 1 : -1;
         sqr_t capture_sqr = move.to + (-8 * rank_sign);
         pos.bb.remove(PieceType::pawn, !from_piece.color, capture_sqr);
         pos.board[capture_sqr].type = PieceType::none;
-    } else if (from_piece.type == PieceType::pawn && rank_dist == 2) {
-        st.en_passant_sqr = move.to;
+        break;
     }
-    if (move.flags == MoveFlag::castle) {
-        const bool queen_side = to_file < from_file;
+    case MoveFlag::ep_victim: st.ep_sqr = move.to; break;
+    case MoveFlag::castle:    {
+        const bool queen_side = move.to < move.from;
+        rank_t from_rank = move.from / 8;
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
 
         move_piece(pos, from_rook_sqr, to_rook_sqr, MoveFlag::quiet);
+        break;
+    }
     }
 
     move_piece(pos, move.from, move.to, move.flags);
@@ -391,24 +389,23 @@ void chess::undo_move(Position &pos, const Move &move) {
 
     Piece captured = pos.st->captured_piece;
 
-    file_t from_file = move.from % 8;
-    rank_t from_rank = move.from / 8;
-    file_t to_file = move.to % 8;
-
-    const bool is_to_white = to_piece.color == Color::white;
-    if (move.flags == MoveFlag::ep) {
-        rank_t rank_sign = is_to_white ? 1 : -1;
+    switch (move.flags) {
+    case MoveFlag::ep: {
+        rank_t rank_sign = to_piece.color == Color::white ? 1 : -1;
         sqr_t capture_sqr = move.to + (-8 * rank_sign);
         pos.bb.place(PieceType::pawn, !to_piece.color, capture_sqr);
         pos.board[capture_sqr].type = PieceType::pawn,
         pos.board[capture_sqr].color = !to_piece.color;
+        break;
     }
-
-    if (move.flags == MoveFlag::castle) {
-        const bool queen_side = to_file < from_file;
+    case MoveFlag::castle: {
+        const bool queen_side = move.to < move.from;
+        rank_t from_rank = move.from / 8;
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
         move_piece(pos, to_rook_sqr, from_rook_sqr, MoveFlag::quiet);
+        break;
+    }
     }
 
     move_piece(pos, move.to, move.from, MoveFlag::quiet);

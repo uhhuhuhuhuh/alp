@@ -24,7 +24,7 @@ struct State {
     Color active_color = Color::white;
     uint32_t castle_rights = CastleRights::none;
     Piece captured_piece;
-    sqr_t en_passant_sqr = -1;
+    sqr_t ep_sqr = -1;
     bb::U64 checks_bb = 0ULL;
     uint32_t halfmove_clock = 0;
 
