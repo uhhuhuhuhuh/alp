@@ -38,8 +38,7 @@ class Piece {
     // Default piece constructor
     inline Piece() : type(PieceType::none), color(Color::white) {}
     // Piece constructor
-    inline Piece(PieceType type_, Color color_, bool can_castle_ = false)
-        : type(type_), color(color_) {}
+    inline Piece(PieceType type_, Color color_) : type(type_), color(color_) {}
 
     inline Piece(char c) {
         color = std::isupper(c) ? Color::white : Color::black;

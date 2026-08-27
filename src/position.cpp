@@ -375,6 +375,12 @@ void chess::do_move(Position &pos, const Move &move, State &st) {
     }
 
     move_piece(pos, move.from, move.to, move.flags);
+    if (move.promotion_type != PieceType::none) {
+        Color color = pos.board[move.to].color;
+        pos.bb.remove(pos.board[move.to].type, color, move.to);
+        pos.bb.place(move.promotion_type, color, move.to);
+        pos.board[move.to].type = move.promotion_type;
+    }
 
     pos.st = &st;
     Color enemy = !pos.board[move.to].color;
@@ -409,6 +415,12 @@ void chess::undo_move(Position &pos, const Move &move) {
     }
 
     move_piece(pos, move.to, move.from, MoveFlag::quiet);
+    if (move.promotion_type != PieceType::none) {
+        Color color = pos.board[move.from].color;
+        pos.bb.remove(pos.board[move.from].type, color, move.from);
+        pos.bb.place(PieceType::pawn, color, move.from);
+        pos.board[move.from].type = PieceType::pawn;
+    }
     pos.board[move.to] = captured;
     if (captured.type != PieceType::none) {
         pos.bb.place(captured.type, captured.color, move.to);
@@ -441,7 +453,7 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
 
     out << indent << "Moves: " << moves.size() << '\n';
     for (const Move &move : moves) {
-        out << indent << "  " << sqr_format(move.from) << sqr_format(move.to) << " " << '\n';
+        out << indent << "  " << move.format() << " " << '\n';
     }
     if (depth >= max - 1) {
         out << indent << "}\n";
@@ -450,7 +462,7 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
 
     uint64_t move_count = 0;
     for (const Move &move : moves) {
-        out << indent << "done move: " << sqr_format(move.from) << sqr_format(move.to) << '\n';
+        out << indent << "done move: " << move.format() << '\n';
         State st;
         do_move(pos, move, st);
         move_count += perft_out_recursive(pos, depth + 1, max, out);
@@ -478,7 +490,7 @@ template <bool root> uint64_t perft_recursive(Position &pos, uint32_t depth, std
             undo_move(pos, move);
         }
         if (root) {
-            out << sqr_format(move.from) << sqr_format(move.to) << ": " << count << '\n';
+            out << move.format() << ": " << count << '\n';
         }
     }
 

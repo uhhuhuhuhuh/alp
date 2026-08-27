@@ -1,4 +1,5 @@
 #include "bitboard.hpp"
+#include "fen_pos.hpp"
 #include "genmoves.hpp"
 #include "piece.hpp"
 #include "position.hpp"
@@ -55,7 +56,7 @@ int main() {
 
 int main() {
     chess::State st;
-    constexpr std::string_view fen = chess::starting_pos_fen;
+    constexpr std::string_view fen = chess::fen::starting_pos;
     std::optional<chess::Position> pos = chess::fen_parser(fen, st);
     if (!pos.has_value()) {
         std::cout << "ERROR: can't parse fen: " << fen << '\n';

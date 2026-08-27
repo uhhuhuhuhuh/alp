@@ -50,10 +50,6 @@ struct Position {
 // outputs the given position in FEN notation
 void output_pos_as_fen(const Position &pos, std::ostream &out);
 
-// The starting position in FEN notation
-constexpr std::string_view starting_pos_fen =
-    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
 // returns a GameState whose data is constructed off of a string formated in FEN notation
 // returns nothing if the string is not in proper FEN notation
 std::optional<Position> fen_parser(std::string_view sv, State &st);

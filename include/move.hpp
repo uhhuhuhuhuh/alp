@@ -1,5 +1,6 @@
 #pragma once
 
+#include "piece.hpp"
 #include "square.hpp"
 #include <cassert>
 #include <cstdint>
@@ -11,18 +12,32 @@ enum MoveFlag : uint8_t {
     ep,
     ep_victim,
     castle,
-    promotion,
 };
 struct Move {
   public:
     sqr_t from;
     sqr_t to;
     uint8_t flags;
+    PieceType promotion_type;
 
   public:
-    Move() : from(-1), to(-1), flags(MoveFlag::quiet) {};
-    Move(sqr_t from_, sqr_t to_) : from(from_), to(to_), flags(MoveFlag::quiet) {};
-    Move(sqr_t from_, sqr_t to_, uint8_t flags_) : from(from_), to(to_), flags(flags_) {};
+    Move() = default;
+    // Move() : from(-1), to(-1), flags(MoveFlag::quiet), promotion_type(PieceType::none) {};
+    Move(sqr_t from_, sqr_t to_)
+        : from(from_), to(to_), flags(MoveFlag::quiet), promotion_type(PieceType::none) {};
+    Move(sqr_t from_, sqr_t to_, uint8_t flags_)
+        : from(from_), to(to_), flags(flags_), promotion_type(PieceType::none) {};
+
+    inline std::string format() const {
+        std::string formated;
+        formated += sqr_format(from);
+        formated += sqr_format(to);
+        if (promotion_type != PieceType::none) {
+            formated += '=';
+            formated += Piece(promotion_type, Color::white).format();
+        }
+        return formated;
+    };
 };
 
 struct MoveArrayIterator {
@@ -60,7 +75,7 @@ struct MoveArrayIterator {
 
 class MoveArray {
   private:
-    constexpr static std::size_t move_array_len = 36;
+    constexpr static std::size_t move_array_len = 64;
     constexpr static float cap_multiplier = 1.5;
     Move fixed[move_array_len];
     Move *data = fixed;
