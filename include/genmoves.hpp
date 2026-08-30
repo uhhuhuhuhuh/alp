@@ -19,17 +19,17 @@ struct PinBBs {
 PinBBs get_pins(const Position &pos, Color color);
 
 template <GenType gen_type>
-void gen_pawn_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+void gen_pawn_moves(Position &pos, sqr_t sqr_t, MoveStack &moves, const PinBBs &pins);
 template <GenType gen_type>
-void gen_knight_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+void gen_knight_moves(Position &pos, sqr_t sqr_t, MoveStack &moves, const PinBBs &pins);
 template <GenType gen_type>
-void gen_bishop_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+void gen_bishop_moves(Position &pos, sqr_t sqr_t, MoveStack &moves, const PinBBs &pins);
 template <GenType gen_type>
-void gen_rook_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
+void gen_rook_moves(Position &pos, sqr_t sqr_t, MoveStack &moves, const PinBBs &pins);
 template <GenType gen_type>
-void gen_queen_moves(Position &pos, sqr_t sqr_t, MoveArray &moves, const PinBBs &pins);
-template <GenType gen_type> void gen_king_moves(Position &pos, sqr_t sqr_t, MoveArray &moves);
+void gen_queen_moves(Position &pos, sqr_t sqr_t, MoveStack &moves, const PinBBs &pins);
+template <GenType gen_type> void gen_king_moves(Position &pos, sqr_t sqr_t, MoveStack &moves);
 // Appends all legal moves for the active color 'moves'.
 // Does not clear 'moves'.
-template <GenType gen_type> MoveArray gen_moves(Position &pos);
+template <GenType gen_type> MoveStack gen_moves(Position &pos);
 } // namespace chess

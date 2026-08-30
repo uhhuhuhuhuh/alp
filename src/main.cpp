@@ -51,18 +51,20 @@ int main() {
     uint32_t depth = 6;
     uint32_t count = chess::perft(*pos, depth - moves.size(), std::cout);
     std::cout << "Count: " << count << " Perft depth: " << depth - moves.size() << '\n';
-}
-*/
+} */
 
 int main() {
     chess::State st;
     constexpr std::string_view fen = chess::fen::starting_pos;
-    std::optional<chess::Position> pos = chess::fen_parser(fen, st);
-    if (!pos.has_value()) {
+    chess::Position pos;
+    auto err = pos.parse_fen(fen, st);
+    if (err != chess::Position::fen_parse_err::ok) {
         std::cout << "ERROR: can't parse fen: " << fen << '\n';
+        std::cout << chess::Position::format_fen_err(err)
+                  << ", Error code: " << static_cast<int>(err) << '\n';
         return -1;
     }
 
-    uint32_t count = chess::perft(*pos, 7, std::cout);
+    uint32_t count = chess::perft(pos, 7, std::cout);
     std::cout << "Count: " << count << '\n';
 }

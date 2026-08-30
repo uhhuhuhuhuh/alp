@@ -4,6 +4,7 @@
 #include "square.hpp"
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 namespace chess {
 enum MoveFlag : uint8_t {
@@ -17,16 +18,16 @@ struct Move {
   public:
     sqr_t from;
     sqr_t to;
-    uint8_t flags;
+    uint8_t flag;
     PieceType promotion_type;
 
   public:
     Move() = default;
     // Move() : from(-1), to(-1), flags(MoveFlag::quiet), promotion_type(PieceType::none) {};
     Move(sqr_t from_, sqr_t to_)
-        : from(from_), to(to_), flags(MoveFlag::quiet), promotion_type(PieceType::none) {};
-    Move(sqr_t from_, sqr_t to_, uint8_t flags_)
-        : from(from_), to(to_), flags(flags_), promotion_type(PieceType::none) {};
+        : from(from_), to(to_), flag(MoveFlag::quiet), promotion_type(PieceType::none) {};
+    Move(sqr_t from_, sqr_t to_, uint8_t flag_)
+        : from(from_), to(to_), flag(flag_), promotion_type(PieceType::none) {};
 
     inline std::string format() const {
         std::string formated;
@@ -40,68 +41,34 @@ struct Move {
     };
 };
 
-struct MoveArrayIterator {
-    using iterator_category = std::forward_iterator_tag;
-    using difference_type = std::ptrdiff_t;
-    using value_type = Move;
-    using pointer = Move *;
-    using reference = Move &;
-
-    MoveArrayIterator(pointer ptr) : m_ptr(ptr) {}
-
-    reference operator*() const { return *m_ptr; }
-    pointer operator->() { return m_ptr; }
-
-    MoveArrayIterator &operator++() {
-        m_ptr++;
-        return *this;
-    }
-    MoveArrayIterator operator++(int) {
-        MoveArrayIterator tmp = *this;
-        ++(*this);
-        return tmp;
-    }
-
-    friend bool operator==(const MoveArrayIterator &a, const MoveArrayIterator &b) {
-        return a.m_ptr == b.m_ptr;
-    };
-    friend bool operator!=(const MoveArrayIterator &a, const MoveArrayIterator &b) {
-        return a.m_ptr != b.m_ptr;
-    };
-
+class MoveStack {
   private:
-    pointer m_ptr;
-};
-
-class MoveArray {
-  private:
-    constexpr static std::size_t move_array_len = 64;
-    constexpr static float cap_multiplier = 1.5;
-    Move fixed[move_array_len];
+    constexpr static std::size_t fixed_cap = 128;
+    constexpr static std::size_t cap_multiplier = 2;
+    Move fixed[fixed_cap];
     Move *data = fixed;
     std::size_t len = 0;
-    std::size_t cap = 0;
-    bool dynamic_array = false;
+    std::size_t cap = fixed_cap;
 
     inline void resize() {
-        std::size_t new_cap = cap == 0 ? len : cap;
-        new_cap *= cap_multiplier;
+        std::size_t new_cap = cap * cap_multiplier;
         Move *new_buf = new Move[new_cap];
-        Move *old_buf = data;
-        for (std::size_t i = 0; i < len; i++, old_buf++) {
-            new_buf[i] = *old_buf;
-        }
-        if (dynamic_array) {
+        std::memcpy(new_buf, data, len * sizeof(Move));
+        if (data != fixed) {
             delete[] data;
         }
         data = new_buf;
-        dynamic_array = true;
         cap = new_cap;
     }
 
   public:
-    inline ~MoveArray() {
-        if (dynamic_array) {
+    using iter = Move *;
+    using citer = const Move *;
+
+  public:
+    MoveStack() = default;
+    inline ~MoveStack() {
+        if (data != fixed) {
             delete[] data;
         }
     }
@@ -115,32 +82,29 @@ class MoveArray {
         return data[idx];
     }
 
-    inline constexpr bool will_resize() {
-        if (dynamic_array) {
-            return len + 1 > cap;
-        }
-        return len + 1 > move_array_len;
-    }
+    inline constexpr bool will_resize() const { return len == cap; }
 
-    inline constexpr void push_back(const Move &move) {
+    inline void push(const Move &move) {
         if (will_resize()) {
             resize();
         }
         data[len] = move;
         len++;
     }
-    inline constexpr chess::Move &
-    emplace_back(sqr_t from = -1, sqr_t to = -1, uint8_t flags = MoveFlag::quiet) {
+    inline void emplace(
+        sqr_t from = -1, sqr_t to = -1, uint8_t flag = MoveFlag::quiet,
+        PieceType promotion = PieceType::none
+    ) {
         if (will_resize()) {
             resize();
         }
         data[len].from = from;
         data[len].to = to;
-        data[len].flags = flags;
+        data[len].flag = flag;
+        data[len].promotion_type = promotion;
         len++;
-        return data[len - 1];
     }
-    inline constexpr void pop_back() {
+    inline void pop() {
         assert(len > 0);
         len--;
     }
@@ -156,7 +120,10 @@ class MoveArray {
 
     inline constexpr std::size_t size() const { return len; }
 
-    inline MoveArrayIterator begin() { return MoveArrayIterator(&data[0]); }
-    inline MoveArrayIterator end() { return MoveArrayIterator(&data[len]); }
+    iter begin() { return data; }
+    iter end() { return data + len; }
+
+    citer begin() const { return data; }
+    citer end() const { return data + len; }
 };
 } // namespace chess

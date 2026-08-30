@@ -7,8 +7,8 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <ostream>
+#include <string_view>
 
 namespace chess {
 enum CastleRights : uint16_t {
@@ -34,8 +34,8 @@ struct State {
     State() = default;
 };
 
-// a struct which holds all the important data used in a game of chess.
-struct Position {
+// a class which holds all the important data used in a game of chess.
+class Position {
   public:
     uint32_t game_ply = 0;
     std::array<Piece, 64> board;
@@ -43,16 +43,37 @@ struct Position {
 
     State *st;
 
+    enum class fen_parse_err : uint8_t {
+        ok,
+        empty,
+        bad_rank_file_count,
+        bad_piece,
+        bad_king_count,
+        bad_active_color,
+        bad_castling,
+        no_castle_rook,
+        no_castle_king,
+        bad_ep_sqr,
+        bad_halfmove,
+        past_50_move,
+        bad_curr_move,
+        unknown_property,
+        too_few_properties,
+    };
+
   public:
     Position() = default;
+    Position(std::string_view sv, State &st);
+
+    // returns a GameState whose data is constructed off of a string formated in FEN notation
+    // returns nothing if the string is not in proper FEN notation
+    fen_parse_err parse_fen(std::string_view sv, State &st);
+
+    static std::string_view format_fen_err(fen_parse_err err);
 };
 
 // outputs the given position in FEN notation
 void output_pos_as_fen(const Position &pos, std::ostream &out);
-
-// returns a GameState whose data is constructed off of a string formated in FEN notation
-// returns nothing if the string is not in proper FEN notation
-std::optional<Position> fen_parser(std::string_view sv, State &st);
 
 // outputs the data in the given Position and prints the board from white's perspective into the
 // given ostream
