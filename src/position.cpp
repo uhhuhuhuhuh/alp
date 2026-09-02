@@ -27,14 +27,14 @@ static inline char castle_rights_to_char(uint8_t &rights) {
 }
 } // namespace chess
 
-void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
+void chess::Position::output_as_fen(std::ostream &out) {
     // irank = inverted rank
     for (rank_t irank = 0; irank < 8; irank++) {
         rank_t rank = 7 - irank;
         file_t empty_count = 0;
         for (file_t file = 0; file < 8; file++) {
             sqr_t sqr = rank * 8 + file;
-            if (pos.board[sqr].type == PieceType::none) {
+            if (board[sqr].type == PieceType::none) {
                 empty_count += 1;
                 continue;
             }
@@ -42,7 +42,7 @@ void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
                 out << empty_count;
                 empty_count = 0;
             }
-            out << pos.board[sqr].format();
+            out << board[sqr].format();
         }
         if (empty_count != 0) {
             out << empty_count;
@@ -53,22 +53,38 @@ void chess::output_pos_as_fen(const Position &pos, std::ostream &out) {
         }
     }
 
-    out << ' ' << (pos.st->active_color == Color::white ? 'w' : 'b') << ' ';
+    out << ' ' << (st->active_color == Color::white ? 'w' : 'b') << ' ';
 
-    uint8_t castle_rights = pos.st->castle_rights;
+    uint8_t castle_rights = st->castle_rights;
     do {
         out << castle_rights_to_char(castle_rights);
     } while (static_cast<unsigned int>(castle_rights) != 0);
 
     out << ' ';
-    if (pos.st->ep_sqr == -1) {
+    if (st->ep_sqr == -1) {
         out << '-';
     } else {
-        out << sqr_format(pos.st->ep_sqr + (pos.st->active_color == Color::white ? 8 : -8));
+        out << sqr_format(st->ep_sqr + (st->active_color == Color::white ? 8 : -8));
     }
 
-    out << ' ' << pos.st->halfmove_clock;
-    out << ' ' << pos.game_ply / 2 << '\n';
+    out << ' ' << st->halfmove_clock;
+    out << ' ' << game_ply / 2 << '\n';
+}
+void chess::Position::output(std::ostream &out) {
+    // irank = inverted rank
+    for (rank_t irank = 0; irank < 8; irank++) {
+        rank_t rank = 7 - irank;
+        out << rank + 1 << "  ";
+        for (file_t file = 0; file < 8; file++) {
+            sqr_t sqr = rank * 8 + file;
+            out << board[sqr].format() << " ";
+        }
+        out << '\n';
+    }
+    out << '\n';
+    out << "   A B C D E F G H\n";
+
+    output_as_fen(out);
 }
 
 namespace chess {
@@ -299,23 +315,6 @@ std::string_view chess::Position::format_fen_err(fen_parse_err err) {
     return "";
 }
 
-void chess::output_pos(const Position &pos, std::ostream &out) {
-    // irank = inverted rank
-    for (rank_t irank = 0; irank < 8; irank++) {
-        rank_t rank = 7 - irank;
-        out << rank + 1 << "  ";
-        for (file_t file = 0; file < 8; file++) {
-            sqr_t sqr = rank * 8 + file;
-            out << pos.board[sqr].format() << " ";
-        }
-        out << '\n';
-    }
-    out << '\n';
-    out << "   A B C D E F G H\n";
-
-    output_pos_as_fen(pos, out);
-}
-
 namespace chess {
 inline static void __strip_castle_rights_helper(const Position &pos, State &state, sqr_t sqr) {
     PieceType type = pos.board[sqr].type;
@@ -371,65 +370,64 @@ static inline void move_piece(Position &pos, sqr_t from, sqr_t to, uint8_t flag)
 }
 } // namespace chess
 
-void chess::do_move(Position &pos, const Move &move, State &st) {
-    st = *pos.st;
-    st.prev = pos.st;
-    st.ep_sqr = -1;
-    st.captured_piece = pos.board[move.to];
-    st.active_color = !pos.st->active_color;
-    pos.game_ply++;
-    strip_castle_rights(pos, st, move.from, move.to);
+void chess::Position::do_move(const Move &move, State &new_st) {
+    new_st = *st;
+    new_st.prev = st;
+    new_st.ep_sqr = -1;
+    new_st.captured_piece = board[move.to];
+    new_st.active_color = !st->active_color;
+    game_ply++;
+    strip_castle_rights(*this, new_st, move.from, move.to);
 
-    Piece &from_piece = pos.board[move.from];
+    Piece &from_piece = board[move.from];
 
     switch (move.flag) {
     case MoveFlag::ep: {
         rank_t rank_sign = from_piece.color == Color::white ? 1 : -1;
         sqr_t capture_sqr = move.to + (-8 * rank_sign);
-        pos.bb.remove(PieceType::pawn, !from_piece.color, capture_sqr);
-        pos.board[capture_sqr].type = PieceType::none;
+        bb.remove(PieceType::pawn, !from_piece.color, capture_sqr);
+        board[capture_sqr].type = PieceType::none;
         break;
     }
-    case MoveFlag::ep_victim: st.ep_sqr = move.to; break;
+    case MoveFlag::ep_victim: new_st.ep_sqr = move.to; break;
     case MoveFlag::castle:    {
         const bool queen_side = move.to < move.from;
         rank_t from_rank = move.from / 8;
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
 
-        move_piece(pos, from_rook_sqr, to_rook_sqr, MoveFlag::quiet);
+        move_piece(*this, from_rook_sqr, to_rook_sqr, MoveFlag::quiet);
         break;
     }
     }
 
-    move_piece(pos, move.from, move.to, move.flag);
+    move_piece(*this, move.from, move.to, move.flag);
     if (move.promotion_type != PieceType::none) {
-        Color color = pos.board[move.to].color;
-        pos.bb.remove(pos.board[move.to].type, color, move.to);
-        pos.bb.place(move.promotion_type, color, move.to);
-        pos.board[move.to].type = move.promotion_type;
+        Color color = board[move.to].color;
+        bb.remove(board[move.to].type, color, move.to);
+        bb.place(move.promotion_type, color, move.to);
+        board[move.to].type = move.promotion_type;
     }
 
-    pos.st = &st;
-    Color enemy = !pos.board[move.to].color;
+    st = &new_st;
+    Color enemy = !board[move.to].color;
 
-    bb::U64 king_bb = pos.bb.get(PieceType::king)[enemy];
+    bb::U64 king_bb = bb.get(PieceType::king)[enemy];
     assert(std::popcount(king_bb) == 1);
-    pos.st->checks_bb = attacks_to_sqr(pos, std::countr_zero(king_bb), enemy);
+    st->checks_bb = attacks_to_sqr(*this, std::countr_zero(king_bb), enemy);
 }
 
-void chess::undo_move(Position &pos, const Move &move) {
-    Piece &to_piece = pos.board[move.to];
+void chess::Position::undo_move(const Move &move) {
+    Piece &to_piece = board[move.to];
 
-    Piece captured = pos.st->captured_piece;
+    Piece captured = st->captured_piece;
 
     switch (move.flag) {
     case MoveFlag::ep: {
         rank_t rank_sign = to_piece.color == Color::white ? 1 : -1;
         sqr_t capture_sqr = move.to + (-8 * rank_sign);
-        pos.bb.place(PieceType::pawn, !to_piece.color, capture_sqr);
-        pos.board[capture_sqr].type = PieceType::pawn,
-        pos.board[capture_sqr].color = !to_piece.color;
+        bb.place(PieceType::pawn, !to_piece.color, capture_sqr);
+        board[capture_sqr].type = PieceType::pawn, board[capture_sqr].color = !to_piece.color;
         break;
     }
     case MoveFlag::castle: {
@@ -437,30 +435,29 @@ void chess::undo_move(Position &pos, const Move &move) {
         rank_t from_rank = move.from / 8;
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
-        move_piece(pos, to_rook_sqr, from_rook_sqr, MoveFlag::quiet);
+        move_piece(*this, to_rook_sqr, from_rook_sqr, MoveFlag::quiet);
         break;
     }
     }
 
-    move_piece(pos, move.to, move.from, MoveFlag::quiet);
+    move_piece(*this, move.to, move.from, MoveFlag::quiet);
     if (move.promotion_type != PieceType::none) {
-        Color color = pos.board[move.from].color;
-        pos.bb.remove(pos.board[move.from].type, color, move.from);
-        pos.bb.place(PieceType::pawn, color, move.from);
-        pos.board[move.from].type = PieceType::pawn;
+        Color color = board[move.from].color;
+        bb.remove(board[move.from].type, color, move.from);
+        bb.place(PieceType::pawn, color, move.from);
+        board[move.from].type = PieceType::pawn;
     }
-    pos.board[move.to] = captured;
+    board[move.to] = captured;
     if (captured.type != PieceType::none) {
-        pos.bb.place(captured.type, captured.color, move.to);
+        bb.place(captured.type, captured.color, move.to);
     }
 
-    pos.st = pos.st->prev;
-    pos.game_ply--;
+    st = st->prev;
+    game_ply--;
 }
 
 namespace chess {
-static uint64_t
-perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &out) {
+static uint64_t perft_out_recursive(Position &pos, uint8_t depth, uint8_t max, std::ostream &out) {
     if (depth >= max) {
         return 0;
     }
@@ -473,7 +470,7 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
 
     out << indent << "{\n";
     std::stringstream ss;
-    output_pos(pos, ss);
+    pos.output(ss);
     std::string str;
     while (std::getline(ss, str)) {
         out << indent << str << '\n';
@@ -492,16 +489,16 @@ perft_out_recursive(Position &pos, uint32_t depth, uint32_t max, std::ostream &o
     for (const Move &move : moves) {
         out << indent << "done move: " << move.format() << '\n';
         State st;
-        do_move(pos, move, st);
+        pos.do_move(move, st);
         move_count += perft_out_recursive(pos, depth + 1, max, out);
-        undo_move(pos, move);
+        pos.undo_move(move);
     }
     out << indent << "total move count: " << move_count << '\n';
     out << indent << "}\n";
     return move_count;
 }
 
-template <bool root> uint64_t perft_recursive(Position &pos, uint32_t depth, std::ostream &out) {
+template <bool root> uint64_t perft_recursive(Position &pos, uint8_t depth, std::ostream &out) {
     uint64_t count = 0, nodes = 0;
     const bool leaf = depth == 2;
 
@@ -511,11 +508,11 @@ template <bool root> uint64_t perft_recursive(Position &pos, uint32_t depth, std
             nodes++;
         } else {
             State st;
-            do_move(pos, move, st);
+            pos.do_move(move, st);
             count = leaf ? gen_moves<GenType::legal>(pos).size()
                          : perft_recursive<false>(pos, depth - 1, out);
             nodes += count;
-            undo_move(pos, move);
+            pos.undo_move(move);
         }
         if (root) {
             out << move.format() << ": " << count << '\n';
@@ -526,10 +523,10 @@ template <bool root> uint64_t perft_recursive(Position &pos, uint32_t depth, std
 }
 } // namespace chess
 
-uint64_t chess::perft(Position &state, uint32_t depth, std::ostream &out) {
+uint64_t chess::perft(Position &state, uint8_t depth, std::ostream &out) {
     return perft_recursive<true>(state, depth, out);
 }
 
-uint64_t chess::perft_out(Position &state, uint32_t depth, std::ostream &out) {
+uint64_t chess::perft_out(Position &state, uint8_t depth, std::ostream &out) {
     return perft_out_recursive(state, 0, depth, out);
 }

@@ -70,28 +70,28 @@ class Position {
     fen_parse_err parse_fen(std::string_view sv, State &st);
 
     static std::string_view format_fen_err(fen_parse_err err);
+
+    // makes a move and flips the active side
+    void do_move(const Move &move, State &new_st);
+    // undoes a move and flips the active side
+    void undo_move(const Move &move);
+
+    // outputs the given position in FEN notation
+    void output_as_fen(std::ostream &out);
+
+    // outputs the data in the given Position and prints the board from white's perspective into the
+    // given ostream
+    void output(std::ostream &out);
 };
-
-// outputs the given position in FEN notation
-void output_pos_as_fen(const Position &pos, std::ostream &out);
-
-// outputs the data in the given Position and prints the board from white's perspective into the
-// given ostream
-void output_pos(const Position &pos, std::ostream &out);
-
-// makes a move and flips the active side
-void do_move(Position &pos, const Move &move, State &st);
-// undoes a move and flips the active side
-void undo_move(Position &pos, const Move &move);
 
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
 // Returns the sum of all the total nodes from each searched depth and branch.
 // (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
-uint64_t perft(Position &pos, uint32_t depth, std::ostream &out);
+uint64_t perft(Position &pos, uint8_t depth, std::ostream &out);
 
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
 // Writes the positon and perft results for each searched depth and branch
 // to the given ostream, and returns the total number of nodes at the requested depth.
 // (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
-uint64_t perft_out(Position &pos, uint32_t depth, std::ostream &out);
+uint64_t perft_out(Position &pos, uint8_t depth, std::ostream &out);
 }; // namespace chess

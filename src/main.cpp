@@ -1,7 +1,5 @@
-#include "bitboard.hpp"
 #include "fen_pos.hpp"
 #include "genmoves.hpp"
-#include "piece.hpp"
 #include "position.hpp"
 #include <cstdint>
 #include <cstdlib>
@@ -36,20 +34,23 @@ branch(chess::Position &pos, const std::vector<chess::Move> &moves, chess::State
 int main() {
     chess::State st_arr[256];
     chess::State *st = st_arr;
-    constexpr std::string_view fen = chess::starting_pos_fen;
-    std::optional<chess::Position> pos = chess::fen_parser(fen, *st++);
-    if (!pos.has_value()) {
+    constexpr std::string_view fen = chess::fen::starting_pos;
+    chess::Position pos;
+    auto err = pos.parse_fen(fen, *st);
+    if (err != chess::Position::fen_parse_err::ok) {
         std::cout << "ERROR: can't parse fen: " << fen << '\n';
+        std::cout << chess::Position::format_fen_err(err)
+                  << ", Error code: " << static_cast<int>(err) << '\n';
         return -1;
     }
 
     std::vector<chess::Move> moves = {
     };
-    st = branch(*pos, moves, st);
+    st = branch(pos, moves, st);
 
-    chess::output_pos(*pos, std::cout);
+    pos.output(std::cout);
     uint32_t depth = 6;
-    uint32_t count = chess::perft(*pos, depth - moves.size(), std::cout);
+    uint32_t count = chess::perft(pos, depth - moves.size(), std::cout);
     std::cout << "Count: " << count << " Perft depth: " << depth - moves.size() << '\n';
 } */
 
@@ -65,6 +66,6 @@ int main() {
         return -1;
     }
 
-    uint32_t count = chess::perft(pos, 7, std::cout);
+    auto count = chess::perft(pos, 7, std::cout);
     std::cout << "Count: " << count << '\n';
 }

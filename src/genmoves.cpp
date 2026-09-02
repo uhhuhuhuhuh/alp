@@ -160,11 +160,7 @@ static inline bool is_self_check(Position &pos, const Move &move, Color color) {
         attacks_to_sqr(pos, std::countr_zero(pos.bb.get(PieceType::king)[color]), color);
     undo_move_bb(pos, move, captured);
 
-    if (attackers != 0) {
-        return true;
-    }
-
-    return false;
+    return attackers != 0;
 }
 
 template <GenType gen_type, typename legal_fn>
@@ -386,31 +382,31 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
 template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &pos) {
     MoveStack moves;
     Color color = pos.st->active_color;
-    PinBBs pin_bb = get_pins(pos, color);
     std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
-    bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
-    sqr_t king_sqr = std::countr_zero(king_bb);
 
     if (checker_count > 1) {
+        bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
         assert(std::popcount(king_bb) == 1);
+        sqr_t king_sqr = std::countr_zero(king_bb);
         gen_king_moves<gen_type>(pos, king_sqr, moves);
-    } else [[likely]] {
-        bb::U64 occ = pos.bb.every_type()[color];
-        while (occ != 0) {
-            sqr_t sqr = poplsb(occ);
-
-            switch (pos.board[sqr].type) {
-            case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
-            default:                break;
-            }
-        }
+        return moves;
     }
 
+    PinBBs pin_bb = get_pins(pos, color);
+    bb::U64 occ = pos.bb.every_type()[color];
+    while (occ != 0) {
+        sqr_t sqr = poplsb(occ);
+
+        switch (pos.board[sqr].type) {
+        case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
+        default:                break;
+        }
+    }
     return moves;
 }
 

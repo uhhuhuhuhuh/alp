@@ -23,13 +23,12 @@ struct Move {
 
   public:
     Move() = default;
-    // Move() : from(-1), to(-1), flags(MoveFlag::quiet), promotion_type(PieceType::none) {};
     Move(sqr_t from_, sqr_t to_)
         : from(from_), to(to_), flag(MoveFlag::quiet), promotion_type(PieceType::none) {};
     Move(sqr_t from_, sqr_t to_, uint8_t flag_)
         : from(from_), to(to_), flag(flag_), promotion_type(PieceType::none) {};
 
-    inline std::string format() const {
+    std::string format() const {
         std::string formated;
         formated += sqr_format(from);
         formated += sqr_format(to);
@@ -50,7 +49,7 @@ class MoveStack {
     std::size_t len = 0;
     std::size_t cap = fixed_cap;
 
-    inline void resize() {
+    void resize() {
         std::size_t new_cap = cap * cap_multiplier;
         Move *new_buf = new Move[new_cap];
         std::memcpy(new_buf, data, len * sizeof(Move));
@@ -67,31 +66,31 @@ class MoveStack {
 
   public:
     MoveStack() = default;
-    inline ~MoveStack() {
+    ~MoveStack() {
         if (data != fixed) {
             delete[] data;
         }
     }
 
-    inline constexpr Move &operator[](std::size_t idx) {
+    constexpr Move &operator[](std::size_t idx) {
         assert(idx < len);
         return data[idx];
     }
-    inline constexpr const Move &operator[](std::size_t idx) const {
+    constexpr const Move &operator[](std::size_t idx) const {
         assert(idx < len);
         return data[idx];
     }
 
-    inline constexpr bool will_resize() const { return len == cap; }
+    constexpr bool will_resize() const { return len == cap; }
 
-    inline void push(const Move &move) {
+    void push(const Move &move) {
         if (will_resize()) {
             resize();
         }
         data[len] = move;
         len++;
     }
-    inline void emplace(
+    void emplace(
         sqr_t from = -1, sqr_t to = -1, uint8_t flag = MoveFlag::quiet,
         PieceType promotion = PieceType::none
     ) {
@@ -104,21 +103,21 @@ class MoveStack {
         data[len].promotion_type = promotion;
         len++;
     }
-    inline void pop() {
+    void pop() {
         assert(len > 0);
         len--;
     }
 
-    inline constexpr chess::Move &back() {
+    constexpr chess::Move &back() {
         assert(len > 0);
         return data[len - 1];
     }
-    inline constexpr const chess::Move &back() const {
+    constexpr const chess::Move &back() const {
         assert(len > 0);
         return data[len - 1];
     }
 
-    inline constexpr std::size_t size() const { return len; }
+    constexpr std::size_t size() const { return len; }
 
     iter begin() { return data; }
     iter end() { return data + len; }
