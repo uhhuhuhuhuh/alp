@@ -21,14 +21,25 @@ enum CastleRights : uint16_t {
 
 struct State {
   public:
+    uint64_t hash = 0ULL;
     Color active_color = Color::white;
-    uint32_t castle_rights = CastleRights::none;
+    uint8_t castle_rights = CastleRights::none;
     Piece captured_piece;
     sqr_t ep_sqr = -1;
-    bb::U64 checks_bb = 0ULL;
+    bb::U64 checkers = 0ULL;
     uint32_t halfmove_clock = 0;
 
     State *prev = nullptr;
+
+    enum class GameEnd : uint8_t {
+        proceed,
+        checkmate,
+        stalemate,
+        dead_pos,
+        threefold,
+        move50,
+    };
+    GameEnd game_end_state = GameEnd::proceed;
 
   public:
     State() = default;
@@ -37,13 +48,13 @@ struct State {
 // a class which holds all the important data used in a game of chess.
 class Position {
   public:
-    uint32_t game_ply = 0;
+    uint16_t game_ply = 0;
     std::array<Piece, 64> board;
     bb::PieceBB bb;
 
     State *st;
 
-    enum class fen_parse_err : uint8_t {
+    enum class FenParseErr : uint8_t {
         ok,
         empty,
         bad_rank_file_count,
@@ -67,9 +78,11 @@ class Position {
 
     // returns a GameState whose data is constructed off of a string formated in FEN notation
     // returns nothing if the string is not in proper FEN notation
-    fen_parse_err parse_fen(std::string_view sv, State &st);
+    FenParseErr parse_fen(std::string_view sv, State &st);
 
-    static std::string_view format_fen_err(fen_parse_err err);
+    static std::string format_fen_err(FenParseErr err);
+
+    void set_game_end_state(const MoveStack &moves);
 
     // makes a move and flips the active side
     void do_move(const Move &move, State &new_st);
@@ -88,10 +101,4 @@ class Position {
 // Returns the sum of all the total nodes from each searched depth and branch.
 // (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
 uint64_t perft(Position &pos, uint8_t depth, std::ostream &out);
-
-// Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
-// Writes the positon and perft results for each searched depth and branch
-// to the given ostream, and returns the total number of nodes at the requested depth.
-// (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
-uint64_t perft_out(Position &pos, uint8_t depth, std::ostream &out);
 }; // namespace chess

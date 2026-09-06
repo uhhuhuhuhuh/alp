@@ -1,13 +1,15 @@
 #include "position.hpp"
+#include "benchmarking.hpp"
 #include "bitboard.hpp"
 #include "genmoves.hpp"
 #include "move.hpp"
 #include "piece.hpp"
 #include "square.hpp"
+#include "zobrist.hpp"
 #include <bit>
 #include <cctype>
 #include <cstdint>
-#include <sstream>
+#include <iomanip>
 #include <string>
 #include <unordered_map>
 
@@ -88,7 +90,7 @@ void chess::Position::output(std::ostream &out) {
 }
 
 namespace chess {
-static Position::fen_parse_err set_castle_rights(Position &pos, const std::string &sub_str) {
+static Position::FenParseErr set_castle_rights(Position &pos, const std::string &sub_str) {
     for (std::size_t i = 0; i < sub_str.length(); i++) {
         char c = sub_str[i];
         rank_t rank = -1;
@@ -106,7 +108,7 @@ static Position::fen_parse_err set_castle_rights(Position &pos, const std::strin
             file = File::H;
             break;
         case '-': break;
-        default:  return Position::fen_parse_err::bad_castling;
+        default:  return Position::FenParseErr::bad_castling;
         }
         if (file == -1) {
             continue;
@@ -114,16 +116,16 @@ static Position::fen_parse_err set_castle_rights(Position &pos, const std::strin
 
         sqr_t sqr = file + (rank * 8);
         if (pos.board[sqr].type != PieceType::rook || pos.board[sqr].color != color) {
-            return Position::fen_parse_err::no_castle_rook;
+            return Position::FenParseErr::no_castle_rook;
         }
 
         sqr_t king_sqr = color == Color::white ? e1 : e8;
         if (pos.board[king_sqr].type != PieceType::king || pos.board[king_sqr].color != color) {
-            return Position::fen_parse_err::no_castle_king;
+            return Position::FenParseErr::no_castle_king;
         }
         pos.st->castle_rights |= rights;
     }
-    return Position::fen_parse_err::ok;
+    return Position::FenParseErr::ok;
 }
 
 enum class On_Non_Board {
@@ -134,7 +136,7 @@ enum class On_Non_Board {
     move_count,
 };
 
-static Position::fen_parse_err
+static Position::FenParseErr
 handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
     switch (on) {
     case On_Non_Board::active_color:
@@ -142,13 +144,13 @@ handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
         try {
             c = str[0];
         } catch (const std::exception &e) {
-            return Position::fen_parse_err::bad_active_color;
+            return Position::FenParseErr::bad_active_color;
         }
         pos.st->active_color = c == 'w' ? Color::white : Color::black;
         break;
     case On_Non_Board::castling_rights: {
         auto err = set_castle_rights(pos, str);
-        if (err != Position::fen_parse_err::ok) {
+        if (err != Position::FenParseErr::ok) {
             return err;
         }
         break;
@@ -158,17 +160,17 @@ handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
         if (pos.st->ep_sqr != -1) {
             pos.st->ep_sqr -= (pos.st->active_color == Color::white ? 8 : -8);
         } else if (str != "-") {
-            return Position::fen_parse_err::bad_ep_sqr;
+            return Position::FenParseErr::bad_ep_sqr;
         }
         break;
     case On_Non_Board::halfmove_clock:
         try {
             pos.st->halfmove_clock = std::stoi(str); // comment here cuz clang-format
         } catch (const std::exception &e) {
-            return Position::fen_parse_err::bad_halfmove;
+            return Position::FenParseErr::bad_halfmove;
         }
         if (pos.st->halfmove_clock > 100) {
-            return Position::fen_parse_err::past_50_move;
+            return Position::FenParseErr::past_50_move;
         }
         break;
     case On_Non_Board::move_count:
@@ -178,18 +180,18 @@ handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
                 pos.game_ply++;
             }
         } catch (const std::exception &e) {
-            return Position::fen_parse_err::bad_curr_move;
+            return Position::FenParseErr::bad_curr_move;
         }
         break;
-    default: return Position::fen_parse_err::unknown_property;
+    default: return Position::FenParseErr::unknown_property;
     }
-    return Position::fen_parse_err::ok;
+    return Position::FenParseErr::ok;
 }
 } // namespace chess
 
-chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, State &st) {
+chess::Position::FenParseErr chess::Position::parse_fen(std::string_view sv, State &st) {
     if (sv.empty()) {
-        return fen_parse_err::empty;
+        return FenParseErr::empty;
     }
 
     Position pos;
@@ -205,12 +207,12 @@ chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, S
             break;
         }
         if (file > 8) {
-            return fen_parse_err::bad_rank_file_count;
+            return FenParseErr::bad_rank_file_count;
         }
         if (c == '/') {
             rank--;
             if (file < 8) {
-                return fen_parse_err::bad_rank_file_count;
+                return FenParseErr::bad_rank_file_count;
             }
             file = 0;
             continue;
@@ -219,7 +221,7 @@ chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, S
         if (std::isdigit(c)) {
             int asint = c - '0';
             if (asint == 0 || asint > 8 - file) {
-                return fen_parse_err::bad_rank_file_count;
+                return FenParseErr::bad_rank_file_count;
             }
             // The board is already initiliazed with all pieces set to none
             file += asint;
@@ -231,11 +233,11 @@ chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, S
         PieceType type = pos.board[sqr].type;
         Color color = pos.board[sqr].color;
         if (type == PieceType::none) {
-            return fen_parse_err::bad_piece;
+            return FenParseErr::bad_piece;
         }
         if (type == PieceType::king && pos.bb.get(PieceType::king)[color] != 0ULL) {
             // king position has already been assigned meaning there are two kings
-            return fen_parse_err::bad_king_count;
+            return FenParseErr::bad_king_count;
         }
 
         pos.bb.place(type, color, sqr);
@@ -244,11 +246,11 @@ chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, S
     }
 
     if (file != 8 || rank != 0) {
-        return fen_parse_err::bad_rank_file_count;
+        return FenParseErr::bad_rank_file_count;
     }
     auto &kings = pos.bb.get(PieceType::king);
     if (std::popcount(kings[Color::white]) != 1 || std::popcount(kings[Color::black]) != 1) {
-        return fen_parse_err::bad_king_count;
+        return FenParseErr::bad_king_count;
     }
 
     std::string not_board = static_cast<std::string>(sv);
@@ -275,98 +277,173 @@ chess::Position::fen_parse_err chess::Position::parse_fen(std::string_view sv, S
 
         std::string sub_str = not_board.substr(slice_start, i - slice_start + 1);
         auto err = handle_non_board(on, pos, sub_str);
-        if (err != fen_parse_err::ok) {
+        if (err != FenParseErr::ok) {
             return err;
         }
         slice_start = -1;
     }
 
     if (on != On_Non_Board::move_count) {
-        return fen_parse_err::too_few_properties;
+        return FenParseErr::too_few_properties;
     }
 
+    pos.st->hash = zobrist::get_hash(pos);
     *this = pos;
-    return fen_parse_err::ok;
+    return FenParseErr::ok;
 }
 
 chess::Position::Position(std::string_view sv, State &st) { parse_fen(sv, st); }
 
-std::string_view chess::Position::format_fen_err(fen_parse_err err) {
-    std::unordered_map<fen_parse_err, std::string_view> map = {
-        {fen_parse_err::ok,                  "ok"                          },
-        {fen_parse_err::empty,               "string empty"                },
-        {fen_parse_err::bad_rank_file_count, "bad rank or file count"      },
-        {fen_parse_err::bad_piece,           "bad piece"                   },
-        {fen_parse_err::bad_king_count,      "bad king count"              },
-        {fen_parse_err::bad_active_color,    "bad active color"            },
-        {fen_parse_err::bad_castling,        "unkown castling right"       },
-        {fen_parse_err::no_castle_rook,      "no castle rook"              },
-        {fen_parse_err::no_castle_king,      "no castle king"              },
-        {fen_parse_err::bad_ep_sqr,          "bad en passant square"       },
-        {fen_parse_err::bad_halfmove,        "invlaid halfmove count"      },
-        {fen_parse_err::past_50_move,        "past 50 move rule draw"      },
-        {fen_parse_err::bad_curr_move,       "invalid current move"        },
-        {fen_parse_err::unknown_property,    "unkown non board property"   },
-        {fen_parse_err::too_few_properties,  "too few non board properties"},
+std::string chess::Position::format_fen_err(FenParseErr err) {
+    std::unordered_map<FenParseErr, std::string_view> map = {
+        {FenParseErr::ok,                  "ok"                          },
+        {FenParseErr::empty,               "string empty"                },
+        {FenParseErr::bad_rank_file_count, "bad rank or file count"      },
+        {FenParseErr::bad_piece,           "bad piece"                   },
+        {FenParseErr::bad_king_count,      "bad king count"              },
+        {FenParseErr::bad_active_color,    "bad active color"            },
+        {FenParseErr::bad_castling,        "unkown castling right"       },
+        {FenParseErr::no_castle_rook,      "no castle rook"              },
+        {FenParseErr::no_castle_king,      "no castle king"              },
+        {FenParseErr::bad_ep_sqr,          "bad en passant square"       },
+        {FenParseErr::bad_halfmove,        "invlaid halfmove count"      },
+        {FenParseErr::past_50_move,        "past 50 move rule draw"      },
+        {FenParseErr::bad_curr_move,       "invalid current move"        },
+        {FenParseErr::unknown_property,    "unkown non board property"   },
+        {FenParseErr::too_few_properties,  "too few non board properties"},
     };
-    if (map.count(err) != 0) {
-        return map[err];
+    if (map.count(err) == 0) {
+        return "";
     }
-    return "";
+    std::string err_str = static_cast<std::string>(map[err]);
+    err_str += ", Error code: ";
+    err_str += std::to_string(static_cast<int>(err));
+    return err_str;
+}
+
+void chess::Position::set_game_end_state(const MoveStack &moves) {
+    if (moves.is_empty()) {
+        if (st->checkers != 0) {
+            st->game_end_state = State::GameEnd::checkmate;
+        } else {
+            st->game_end_state = State::GameEnd::stalemate;
+        }
+        return;
+    }
+
+    if (st->halfmove_clock >= 100) {
+        st->game_end_state = State::GameEnd::move50;
+        return;
+    }
+
+    // DEAD POSITION
+
+    bb::U64 occ = bb.occupancy();
+    if (std::popcount(occ) < 4) {
+        if (bb.get_all(PieceType::king) == occ) {
+            st->game_end_state = State::GameEnd::dead_pos;
+            return;
+        }
+
+        const auto has_only_king_and_minor = [&](Color c) -> bool {
+            const bb::U64 minor = bb.get(PieceType::knight)[c] | bb.get(PieceType::bishop)[c];
+            const Color enemy = !c;
+
+            return (std::popcount(minor) == 1 &&
+                    (bb.get(PieceType::king)[c] | minor) == bb.every_type()[c]) &&
+                   (bb.get(PieceType::king)[enemy] == bb.every_type()[enemy]);
+        };
+
+        if (has_only_king_and_minor(Color::white) || has_only_king_and_minor(Color::black)) {
+            st->game_end_state = State::GameEnd::dead_pos;
+            return;
+        }
+
+        const auto has_only_king_and_bishop = [&](Color c, bb::U64 bishop) -> bool {
+            return std::popcount(bishop) == 1 &&
+                   (bb.get(PieceType::king)[c] | bishop) == bb.every_type()[c];
+        };
+
+        const bb::U64 w_bishop = bb.get(PieceType::bishop)[Color::white];
+        const bb::U64 b_bishop = bb.get(PieceType::bishop)[Color::black];
+        if (has_only_king_and_bishop(Color::white, w_bishop) &&
+            has_only_king_and_bishop(Color::black, b_bishop) &&
+            bb::is_sqr_white(std::countr_zero(w_bishop)) ==
+                bb::is_sqr_white(std::countr_zero(b_bishop))) {
+            st->game_end_state = State::GameEnd::dead_pos;
+            return;
+        }
+    }
+
+    // THREE FOLD
+
+    if (st->halfmove_clock < 4 || st->prev == nullptr || st->prev->prev == nullptr) {
+        st->game_end_state = State::GameEnd::proceed;
+        return;
+    }
+
+    uint8_t count = 1, dist = 2;
+    for (State *curr = st->prev->prev;
+         curr->prev != nullptr && curr->prev->prev != nullptr && dist <= st->halfmove_clock;
+         curr = curr->prev->prev, dist += 2) {
+
+        if (curr->hash == st->hash && ++count == 3) {
+            st->game_end_state = State::GameEnd::threefold;
+            return;
+        }
+    }
+
+    // PROCEED
+    st->game_end_state = State::GameEnd::proceed;
 }
 
 namespace chess {
 inline static void __strip_castle_rights_helper(const Position &pos, State &state, sqr_t sqr) {
-    PieceType type = pos.board[sqr].type;
-    Color color = pos.board[sqr].color;
+    uint8_t rights[64]{};
+    rights[a1] = CastleRights::white_queen;
+    rights[h1] = CastleRights::white_king;
+    rights[e1] = CastleRights::white_queen | CastleRights::white_king;
+    rights[a8] = CastleRights::black_queen;
+    rights[h8] = CastleRights::black_king;
+    rights[e8] = CastleRights::black_queen | CastleRights::black_king;
 
-    if (sqr == a1 && type == PieceType::rook && color == Color::white) {
-        state.castle_rights &= ~CastleRights::white_queen;
-        return;
-    }
-    if (sqr == h1 && type == PieceType::rook && color == Color::white) {
-        state.castle_rights &= ~CastleRights::white_king;
-        return;
-    }
-    if (sqr == e1 && type == PieceType::king && color == Color::white) {
-        state.castle_rights &= ~(CastleRights::white_queen | CastleRights::white_king);
-        return;
-    }
-
-    if (sqr == a8 && type == PieceType::rook && color == Color::black) {
-        state.castle_rights &= ~CastleRights::black_queen;
-        return;
-    }
-    if (sqr == h8 && type == PieceType::rook && color == Color::black) {
-        state.castle_rights &= ~CastleRights::black_king;
-        return;
-    }
-    if (sqr == e8 && type == PieceType::king && color == Color::black) {
-        state.castle_rights &= ~(CastleRights::black_queen | CastleRights::black_king);
-        return;
-    }
+    state.castle_rights &= ~rights[sqr];
 }
-static void strip_castle_rights(const Position &pos, State &state, sqr_t from, sqr_t to) {
+inline static void strip_castle_rights(const Position &pos, State &state, sqr_t from, sqr_t to) {
     __strip_castle_rights_helper(pos, state, from);
     __strip_castle_rights_helper(pos, state, to);
 }
 
-static inline void move_piece(Position &pos, sqr_t from, sqr_t to, uint8_t flag) {
+inline static void set_halfmove_clock(const Position &pos, State &state, const Move &move) {
+    if (pos.board[move.from].type == PieceType::pawn) {
+        state.halfmove_clock = 0;
+        return;
+    }
+    if (move.flag == MoveFlag::capture || move.flag == MoveFlag::ep) {
+        state.halfmove_clock = 0;
+        return;
+    }
+    state.halfmove_clock++;
+}
+
+static inline void move_piece(Position &pos, State &st, sqr_t from, sqr_t to, uint8_t flag) {
     PieceType type = pos.board[from].type;
     Color color = pos.board[from].color;
-    switch (flag) {
-    case MoveFlag::capture: {
-        PieceType captured_type = pos.board[to].type;
-        Color captured_color = pos.board[to].color;
-        pos.bb.capture(type, color, from, captured_type, captured_color, to);
-        break;
-    }
-    default: pos.bb.move(type, color, from, to); break;
-    }
+    PieceType captured_type = pos.board[to].type;
+    Color captured_color = pos.board[to].color;
 
     pos.board[to].type = type;
     pos.board[to].color = color;
     pos.board[from].type = PieceType::none;
+
+    st.hash ^= zobrist::piece(type, color, from);
+    if (flag == MoveFlag::capture) {
+        pos.bb.capture(type, color, from, captured_type, captured_color, to);
+        st.hash ^= zobrist::piece(captured_type, captured_color, to);
+    } else {
+        pos.bb.move(type, color, from, to);
+    }
+    st.hash ^= zobrist::piece(type, color, to);
 }
 } // namespace chess
 
@@ -378,15 +455,15 @@ void chess::Position::do_move(const Move &move, State &new_st) {
     new_st.active_color = !st->active_color;
     game_ply++;
     strip_castle_rights(*this, new_st, move.from, move.to);
+    set_halfmove_clock(*this, new_st, move);
 
     Piece &from_piece = board[move.from];
 
     switch (move.flag) {
     case MoveFlag::ep: {
-        rank_t rank_sign = from_piece.color == Color::white ? 1 : -1;
-        sqr_t capture_sqr = move.to + (-8 * rank_sign);
-        bb.remove(PieceType::pawn, !from_piece.color, capture_sqr);
-        board[capture_sqr].type = PieceType::none;
+        bb.remove(PieceType::pawn, !from_piece.color, st->ep_sqr);
+        new_st.hash ^= zobrist::piece(PieceType::pawn, !from_piece.color, st->ep_sqr);
+        board[st->ep_sqr].type = PieceType::none;
         break;
     }
     case MoveFlag::ep_victim: new_st.ep_sqr = move.to; break;
@@ -396,36 +473,51 @@ void chess::Position::do_move(const Move &move, State &new_st) {
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
 
-        move_piece(*this, from_rook_sqr, to_rook_sqr, MoveFlag::quiet);
+        move_piece(*this, new_st, from_rook_sqr, to_rook_sqr, MoveFlag::quiet);
         break;
     }
     }
 
-    move_piece(*this, move.from, move.to, move.flag);
+    move_piece(*this, new_st, move.from, move.to, move.flag);
     if (move.promotion_type != PieceType::none) {
         Color color = board[move.to].color;
         bb.remove(board[move.to].type, color, move.to);
         bb.place(move.promotion_type, color, move.to);
+        new_st.hash ^= zobrist::piece(board[move.to].type, color, move.to) ^
+                       zobrist::piece(move.promotion_type, color, move.to);
         board[move.to].type = move.promotion_type;
     }
 
-    st = &new_st;
-    Color enemy = !board[move.to].color;
+    if (new_st.castle_rights != st->castle_rights) {
+        new_st.hash ^= zobrist::castle_rights(st->castle_rights) ^
+                       zobrist::castle_rights(new_st.castle_rights);
+    }
 
-    bb::U64 king_bb = bb.get(PieceType::king)[enemy];
+    new_st.hash ^= zobrist::ep(st->ep_sqr);
+    if (new_st.ep_sqr != st->ep_sqr) {
+        new_st.hash ^= zobrist::ep(new_st.ep_sqr);
+    }
+
+    new_st.hash ^= zobrist::black_active;
+
     assert(std::popcount(king_bb) == 1);
-    st->checks_bb = attacks_to_sqr(*this, std::countr_zero(king_bb), enemy);
+
+    st = &new_st;
+
+    Color enemy = !board[move.to].color;
+    bb::U64 king_bb = bb.get(PieceType::king)[enemy];
+    st->checkers = attacks_to_sqr(*this, std::countr_zero(king_bb), enemy);
 }
 
 void chess::Position::undo_move(const Move &move) {
+    assert(st->prev != nullptr);
     Piece &to_piece = board[move.to];
 
     Piece captured = st->captured_piece;
 
     switch (move.flag) {
     case MoveFlag::ep: {
-        rank_t rank_sign = to_piece.color == Color::white ? 1 : -1;
-        sqr_t capture_sqr = move.to + (-8 * rank_sign);
+        sqr_t capture_sqr = st->prev->ep_sqr;
         bb.place(PieceType::pawn, !to_piece.color, capture_sqr);
         board[capture_sqr].type = PieceType::pawn, board[capture_sqr].color = !to_piece.color;
         break;
@@ -435,12 +527,12 @@ void chess::Position::undo_move(const Move &move) {
         rank_t from_rank = move.from / 8;
         sqr_t from_rook_sqr = (queen_side ? 0 : 7) + (from_rank * 8);
         sqr_t to_rook_sqr = move.to + (queen_side ? 1 : -1);
-        move_piece(*this, to_rook_sqr, from_rook_sqr, MoveFlag::quiet);
+        move_piece(*this, *st, to_rook_sqr, from_rook_sqr, MoveFlag::quiet);
         break;
     }
     }
 
-    move_piece(*this, move.to, move.from, MoveFlag::quiet);
+    move_piece(*this, *st, move.to, move.from, MoveFlag::quiet);
     if (move.promotion_type != PieceType::none) {
         Color color = board[move.from].color;
         bb.remove(board[move.from].type, color, move.from);
@@ -457,52 +549,12 @@ void chess::Position::undo_move(const Move &move) {
 }
 
 namespace chess {
-static uint64_t perft_out_recursive(Position &pos, uint8_t depth, uint8_t max, std::ostream &out) {
-    if (depth >= max) {
-        return 0;
-    }
-    auto moves = gen_moves<GenType::legal>(pos);
-
-    std::string indent = "";
-    for (uint32_t i = 0; i < depth; i++) {
-        indent += "  ";
-    }
-
-    out << indent << "{\n";
-    std::stringstream ss;
-    pos.output(ss);
-    std::string str;
-    while (std::getline(ss, str)) {
-        out << indent << str << '\n';
-    }
-
-    out << indent << "Moves: " << moves.size() << '\n';
-    for (const Move &move : moves) {
-        out << indent << "  " << move.format() << " " << '\n';
-    }
-    if (depth >= max - 1) {
-        out << indent << "}\n";
-        return moves.size();
-    }
-
-    uint64_t move_count = 0;
-    for (const Move &move : moves) {
-        out << indent << "done move: " << move.format() << '\n';
-        State st;
-        pos.do_move(move, st);
-        move_count += perft_out_recursive(pos, depth + 1, max, out);
-        pos.undo_move(move);
-    }
-    out << indent << "total move count: " << move_count << '\n';
-    out << indent << "}\n";
-    return move_count;
-}
-
 template <bool root> uint64_t perft_recursive(Position &pos, uint8_t depth, std::ostream &out) {
     uint64_t count = 0, nodes = 0;
     const bool leaf = depth == 2;
 
-    for (const Move &move : gen_moves<GenType::legal>(pos)) {
+    auto moves = gen_moves<GenType::legal>(pos);
+    for (const Move &move : moves) {
         if (root && depth <= 1) {
             count = 1;
             nodes++;
@@ -524,9 +576,14 @@ template <bool root> uint64_t perft_recursive(Position &pos, uint8_t depth, std:
 } // namespace chess
 
 uint64_t chess::perft(Position &state, uint8_t depth, std::ostream &out) {
-    return perft_recursive<true>(state, depth, out);
-}
+    Timer timer;
+    timer.start();
+    auto nodes = perft_recursive<true>(state, depth, out);
+    timer.stop();
+    auto duration = timer.duration() / 1'000'000;
+    auto nps = nodes / duration;
 
-uint64_t chess::perft_out(Position &state, uint8_t depth, std::ostream &out) {
-    return perft_out_recursive(state, 0, depth, out);
+    out << "Total Time seconds: " << duration << '\n';
+    out << "Nodes per Second: " << std::fixed << std::setprecision(0) << nps << '\n';
+    return nodes;
 }

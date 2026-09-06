@@ -23,13 +23,13 @@ target_compile_options(alp PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>
 )
 
-option(BUILD_GMAGIC "Build the gmagicattacks tool" OFF)
-if (BUILD_GMAGIC)
-    add_executable(gmagicattacks
-        tools/gmagicattacks/gmagicattacks.cpp
+option(BUILD_BBGEN "Build the constbbgen tool" OFF)
+if (BUILD_BBGEN)
+    add_executable(constbbgen
+        tools/constbbgen/constbbgen.cpp
     )
-    target_link_libraries(gmagicattacks PRIVATE core)
-    target_compile_options(gmagicattacks PRIVATE
+    target_link_libraries(constbbgen PRIVATE core)
+    target_compile_options(constbbgen PRIVATE
         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>
     )
 endif()

@@ -27,6 +27,8 @@ struct Move {
         : from(from_), to(to_), flag(MoveFlag::quiet), promotion_type(PieceType::none) {};
     Move(sqr_t from_, sqr_t to_, uint8_t flag_)
         : from(from_), to(to_), flag(flag_), promotion_type(PieceType::none) {};
+    Move(sqr_t from_, sqr_t to_, uint8_t flag_, PieceType type)
+        : from(from_), to(to_), flag(flag_), promotion_type(type) {};
 
     std::string format() const {
         std::string formated;
@@ -42,23 +44,9 @@ struct Move {
 
 class MoveStack {
   private:
-    constexpr static std::size_t fixed_cap = 128;
-    constexpr static std::size_t cap_multiplier = 2;
-    Move fixed[fixed_cap];
-    Move *data = fixed;
+    constexpr static std::size_t fixed_cap = 256;
+    Move data[fixed_cap];
     std::size_t len = 0;
-    std::size_t cap = fixed_cap;
-
-    void resize() {
-        std::size_t new_cap = cap * cap_multiplier;
-        Move *new_buf = new Move[new_cap];
-        std::memcpy(new_buf, data, len * sizeof(Move));
-        if (data != fixed) {
-            delete[] data;
-        }
-        data = new_buf;
-        cap = new_cap;
-    }
 
   public:
     using iter = Move *;
@@ -66,11 +54,6 @@ class MoveStack {
 
   public:
     MoveStack() = default;
-    ~MoveStack() {
-        if (data != fixed) {
-            delete[] data;
-        }
-    }
 
     constexpr Move &operator[](std::size_t idx) {
         assert(idx < len);
@@ -81,12 +64,10 @@ class MoveStack {
         return data[idx];
     }
 
-    constexpr bool will_resize() const { return len == cap; }
+    constexpr bool is_empty() const { return len == 0; }
 
     void push(const Move &move) {
-        if (will_resize()) {
-            resize();
-        }
+        assert(len < fixed_cap);
         data[len] = move;
         len++;
     }
@@ -94,9 +75,7 @@ class MoveStack {
         sqr_t from = -1, sqr_t to = -1, uint8_t flag = MoveFlag::quiet,
         PieceType promotion = PieceType::none
     ) {
-        if (will_resize()) {
-            resize();
-        }
+        assert(len < fixed_cap);
         data[len].from = from;
         data[len].to = to;
         data[len].flag = flag;
@@ -104,16 +83,16 @@ class MoveStack {
         len++;
     }
     void pop() {
-        assert(len > 0);
+        assert(!is_empty());
         len--;
     }
 
     constexpr chess::Move &back() {
-        assert(len > 0);
+        assert(!is_empty());
         return data[len - 1];
     }
     constexpr const chess::Move &back() const {
-        assert(len > 0);
+        assert(!is_empty());
         return data[len - 1];
     }
 
@@ -122,7 +101,7 @@ class MoveStack {
     iter begin() { return data; }
     iter end() { return data + len; }
 
-    citer begin() const { return data; }
-    citer end() const { return data + len; }
+    constexpr citer begin() const { return data; }
+    constexpr citer end() const { return data + len; }
 };
 } // namespace chess

@@ -13,6 +13,7 @@ enum class PieceType : uint8_t {
     queen,
     king,
 };
+constexpr uint8_t max_PieceType = static_cast<uint8_t>(PieceType::king);
 
 // An enum used to designate the color of a piece and a game's active color
 enum class Color : bool {

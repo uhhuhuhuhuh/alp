@@ -72,39 +72,38 @@ chess::PinBBs chess::get_pins(const Position &pos, Color color) {
 namespace chess {
 static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const PinBBs &pin_bb) {
     bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
-    std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
+    std::uint32_t checker_count = std::popcount(pos.st->checkers);
 
-    if (std::popcount(pos.st->checks_bb) == 1 && is_pinned) {
+    if (std::popcount(pos.st->checkers) == 1 && is_pinned) {
         return false;
     }
 
-    PieceType type = pos.board[move.from].type;
     Color color = pos.board[move.from].color;
     bb::U64 to_bb = 1ULL << move.to;
     if (checker_count == 1) {
-        bool capture_checker = (to_bb & pos.st->checks_bb) != 0;
-
-        bb::U64 ep_bb = 0ULL;
-        if (pos.st->ep_sqr != -1) {
-            ep_bb = 1ULL << (pos.st->ep_sqr + (color == Color::white ? 8 : -8));
-        }
-        bool ep_checker = type == PieceType::pawn && ((to_bb & ep_bb) != 0);
-
-        sqr_t checker_bb = std::countr_zero(pos.st->checks_bb);
-        sqr_t king_sqr = std::countr_zero(pos.bb.get(PieceType::king)[color]);
-        bool block_checker = (to_bb & bb::slider_between[checker_bb][king_sqr]) != 0;
-
-        if (capture_checker || ep_checker || block_checker) {
+        const bool capture_checker = (to_bb & pos.st->checkers) != 0;
+        if (capture_checker) {
             return true;
         }
-        return false;
+
+        if (move.flag == MoveFlag::ep) {
+            bb::U64 ep_bb = 1ULL << (pos.st->ep_sqr + (color == Color::white ? 8 : -8));
+
+            const bool ep_checker = (to_bb & ep_bb) != 0;
+            if (ep_checker) {
+                return true;
+            }
+        }
+
+        sqr_t checker_bb = std::countr_zero(pos.st->checkers);
+        sqr_t king_sqr = std::countr_zero(pos.bb.get(PieceType::king)[color]);
+        const bool block_checker = (to_bb & bb::slider_between[checker_bb][king_sqr]) != 0;
+
+        return block_checker;
     }
 
     if (is_pinned) {
-        if (((1ULL << move.to) & pin_bb.pin_rays[move.from]) != 0) {
-            return true;
-        }
-        return false;
+        return ((1ULL << move.to) & pin_bb.pin_rays[move.from]) != 0;
     }
 
     if (move.flag == MoveFlag::ep) {
@@ -119,7 +118,6 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
         pos.bb.remove(PieceType::pawn, enemy, pos.st->ep_sqr);
 
         bb::U64 RQ = pos.bb.get(PieceType::rook)[enemy] | pos.bb.get(PieceType::queen)[enemy];
-        RQ &= rank_bb;
         bb::U64 attackers = bb::get_rook_attack(std::countr_zero(king_bb), pos.bb.occupancy()) & RQ;
 
         pos.bb.place(PieceType::pawn, color, move.from);
@@ -168,16 +166,14 @@ static inline void push_move(
     Position &pos, sqr_t from, sqr_t to, uint8_t flags, PieceType promotion, MoveStack &moves,
     legal_fn is_legal
 ) {
-    if constexpr (gen_type == GenType::legal) {
-        Move move(from, to, flags);
-        move.promotion_type = promotion;
-        if (is_legal(pos, move)) {
-            moves.push(move);
-        }
+    if constexpr (gen_type != GenType::legal) {
+        moves.emplace(from, to, flags, promotion);
         return;
     }
-
-    moves.emplace(from, to, flags, promotion);
+    Move move(from, to, flags, promotion);
+    if (is_legal(pos, move)) {
+        moves.push(move);
+    }
 }
 
 template <GenType gen_type>
@@ -234,7 +230,7 @@ static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack &mov
         return;
     }
 
-    if (pos.st->checks_bb != 0) {
+    if (pos.st->checkers != 0) {
         return;
     }
 
@@ -381,30 +377,41 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
 
 template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &pos) {
     MoveStack moves;
+
+    if (pos.st->game_end_state != State::GameEnd::proceed) {
+        return moves;
+    }
+
     Color color = pos.st->active_color;
-    std::uint32_t checker_count = std::popcount(pos.st->checks_bb);
+    std::uint32_t checker_count = std::popcount(pos.st->checkers);
 
     if (checker_count > 1) {
         bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
         assert(std::popcount(king_bb) == 1);
         sqr_t king_sqr = std::countr_zero(king_bb);
         gen_king_moves<gen_type>(pos, king_sqr, moves);
-        return moves;
+    } else [[likely]] {
+        PinBBs pin_bb = get_pins(pos, color);
+        bb::U64 occ = pos.bb.every_type()[color];
+        while (occ != 0) {
+            sqr_t sqr = poplsb(occ);
+
+            switch (pos.board[sqr].type) {
+            case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+            case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
+            default:                break;
+            }
+        }
     }
 
-    PinBBs pin_bb = get_pins(pos, color);
-    bb::U64 occ = pos.bb.every_type()[color];
-    while (occ != 0) {
-        sqr_t sqr = poplsb(occ);
-
-        switch (pos.board[sqr].type) {
-        case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-        case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-        case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-        case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-        case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-        case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
-        default:                break;
+    if constexpr (gen_type == GenType::legal) {
+        pos.set_game_end_state(moves);
+        if (pos.st->game_end_state != State::GameEnd::proceed) {
+            return MoveStack{};
         }
     }
     return moves;
