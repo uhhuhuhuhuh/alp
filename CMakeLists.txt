@@ -9,15 +9,15 @@ set(CMAKE_CXX_FLAGS "-Wall -Werror -pedantic")
 
 project(alp)
 
-file(GLOB_RECURSE SRC_FILES src/*.cpp)
-list(FILTER SRC_FILES EXCLUDE REGEX ".*/main\\.cpp$")
-add_library(core ${SRC_FILES})
-target_include_directories(core PUBLIC include/)
+file(GLOB_RECURSE CORE_SRC_FILES alp_core/src/*.cpp)
+add_library(core ${CORE_SRC_FILES})
+target_include_directories(core PUBLIC alp_core/include/)
 target_compile_options(core PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>
 )
 
-add_executable(alp src/main.cpp)
+file(GLOB_RECURSE UI_SRC_FILES alp_ui/src/*.cpp)
+add_executable(alp ${UI_SRC_FILES})
 target_link_libraries(alp PRIVATE core)
 target_compile_options(alp PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>

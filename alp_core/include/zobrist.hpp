@@ -27,7 +27,7 @@ constexpr std::array<uint64_t, map_size> constexpr_get_map() {
 }
 constexpr std::array<uint64_t, map_size> zobrist_map = constexpr_get_map();
 
-constexpr uint64_t black_active = zobrist_map[map_black_active_idx];
+constexpr uint64_t side() { return zobrist_map[map_black_active_idx]; }
 
 inline constexpr uint64_t piece(PieceType type, Color color, sqr_t sqr) {
     constexpr uint8_t color_type_max = max_PieceType * 2;
@@ -48,7 +48,7 @@ inline constexpr uint64_t castle_rights(uint8_t rights) {
 }
 
 inline constexpr uint64_t ep(sqr_t ep) {
-    if (ep == -1) {
+    if (ep == ep_none) {
         return 0;
     }
     file_t ep_file = ep % 8;
@@ -71,14 +71,11 @@ inline uint64_t get_hash(const Position &pos) {
     }
 
     if (pos.st->active_color == Color::black) {
-        hash ^= black_active;
+        hash ^= side();
     }
 
     hash ^= castle_rights(pos.st->castle_rights);
-
-    if (pos.st->ep_sqr != -1) {
-        hash ^= ep(pos.st->ep_sqr);
-    }
+    hash ^= ep(pos.st->ep_sqr);
 
     return hash;
 }

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <string_view>
 
 namespace chess {
 enum MoveFlag : uint8_t {
@@ -30,6 +31,42 @@ struct Move {
     Move(sqr_t from_, sqr_t to_, uint8_t flag_, PieceType type)
         : from(from_), to(to_), flag(flag_), promotion_type(type) {};
 
+    bool parse(std::string_view sv) {
+        if (sv.size() != 4 && sv.size() != 6) {
+            return false;
+        }
+
+        auto sq = [](auto s) -> sqr_t {
+            return (s[0] >= 'a' && s[0] <= 'h' && s[1] >= '1' && s[1] <= '8')
+                       ? s[0] - 'a' + 8 * (s[1] - '1')
+                       : -1;
+        };
+        sqr_t f = sq(sv.substr(0, 2));
+        sqr_t t = sq(sv.substr(2, 2));
+
+        if (f < 0 || t < 0 || (sv.size() == 6 && sv[4] != '=')) {
+            return false;
+        }
+
+        from = f;
+        to = t;
+
+        if (sv.size() == 4) {
+            promotion_type = PieceType::none;
+            return true;
+        }
+
+        Piece piece(sv[5]);
+        switch (piece.type) {
+        case PieceType::knight:
+        case PieceType::bishop:
+        case PieceType::rook:
+        case PieceType::queen:  promotion_type = piece.type; return true;
+
+        default: return false;
+        }
+    }
+
     std::string format() const {
         std::string formated;
         formated += sqr_format(from);
@@ -54,6 +91,19 @@ class MoveStack {
 
   public:
     MoveStack() = default;
+    MoveStack(const MoveStack &other) {
+        len = other.len;
+        for (std::size_t i = 0; i < len; i++) {
+            data[i] = other[i];
+        }
+    };
+
+    void operator=(const MoveStack &other) {
+        len = other.len;
+        for (std::size_t i = 0; i < len; i++) {
+            data[i] = other[i];
+        }
+    };
 
     constexpr Move &operator[](std::size_t idx) {
         assert(idx < len);

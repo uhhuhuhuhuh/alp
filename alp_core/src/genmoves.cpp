@@ -71,28 +71,22 @@ chess::PinBBs chess::get_pins(const Position &pos, Color color) {
 
 namespace chess {
 static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const PinBBs &pin_bb) {
-    bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
-    std::uint32_t checker_count = std::popcount(pos.st->checkers);
+    const bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
 
-    if (std::popcount(pos.st->checkers) == 1 && is_pinned) {
+    if (pos.st->checkers > 0 && is_pinned) {
         return false;
     }
 
     Color color = pos.board[move.from].color;
-    bb::U64 to_bb = 1ULL << move.to;
-    if (checker_count == 1) {
+    const bb::U64 to_bb = 1ULL << move.to;
+    if (pos.st->checkers > 0) {
         const bool capture_checker = (to_bb & pos.st->checkers) != 0;
         if (capture_checker) {
             return true;
         }
 
         if (move.flag == MoveFlag::ep) {
-            bb::U64 ep_bb = 1ULL << (pos.st->ep_sqr + (color == Color::white ? 8 : -8));
-
-            const bool ep_checker = (to_bb & ep_bb) != 0;
-            if (ep_checker) {
-                return true;
-            }
+            return true;
         }
 
         sqr_t checker_bb = std::countr_zero(pos.st->checkers);
@@ -103,25 +97,26 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
     }
 
     if (is_pinned) {
-        return ((1ULL << move.to) & pin_bb.pin_rays[move.from]) != 0;
+        return (to_bb & pin_bb.pin_rays[move.from]) != 0;
     }
 
     if (move.flag == MoveFlag::ep) {
         bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
-        bb::U64 rank_bb = bb::ranks[move.from / 8];
-        if ((rank_bb & king_bb) == 0) {
+        if ((bb::ranks[move.from / 8] & king_bb) == 0) {
             return true;
         }
 
+        sqr_t captured_sqr = pos.st->ep_sqr - (color == Color::white ? 8 : -8);
+
         Color enemy = !color;
         pos.bb.remove(PieceType::pawn, color, move.from);
-        pos.bb.remove(PieceType::pawn, enemy, pos.st->ep_sqr);
+        pos.bb.remove(PieceType::pawn, enemy, captured_sqr);
 
         bb::U64 RQ = pos.bb.get(PieceType::rook)[enemy] | pos.bb.get(PieceType::queen)[enemy];
         bb::U64 attackers = bb::get_rook_attack(std::countr_zero(king_bb), pos.bb.occupancy()) & RQ;
 
         pos.bb.place(PieceType::pawn, color, move.from);
-        pos.bb.place(PieceType::pawn, enemy, pos.st->ep_sqr);
+        pos.bb.place(PieceType::pawn, enemy, captured_sqr);
 
         return attackers == 0;
     }
@@ -311,7 +306,7 @@ void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveStack &moves, const Pin
         }
     }
 
-    bb::U64 ep_bb = pos.st->ep_sqr == -1 ? 0ULL : (1ULL << (pos.st->ep_sqr + dir));
+    bb::U64 ep_bb = 1ULL << pos.st->ep_sqr;
     bb::U64 attacks = bb::pawn_attacks[color][sqr] & (pos.bb.every_type()[!color] | ep_bb);
     while (attacks != 0) {
         sqr_t to = poplsb(attacks);
@@ -409,7 +404,7 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
     }
 
     if constexpr (gen_type == GenType::legal) {
-        pos.set_game_end_state(moves);
+        pos.st->game_end_state = pos.get_game_end_state(moves);
         if (pos.st->game_end_state != State::GameEnd::proceed) {
             return MoveStack{};
         }

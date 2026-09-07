@@ -63,6 +63,7 @@ constexpr std::array<int, 64> rook_bit_idxs = {12, 11, 11, 11, 11, 11, 11, 12, 1
                                                10, 10, 10, 11, 12, 11, 11, 11, 11, 11, 11, 12};
 
 // GENERATED FROM "tools/gmagicattacks"
+// clang-format off
 
 constexpr std::array<std::array<U64, 64>, 64> slider_between = {
     std::array<U64, 64>{

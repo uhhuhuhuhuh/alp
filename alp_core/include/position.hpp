@@ -19,7 +19,8 @@ enum CastleRights : uint16_t {
     black_king = 8,
 };
 
-struct State {
+constexpr sqr_t ep_none = 0;
+class State {
   public:
     uint64_t hash = 0ULL;
     Color active_color = Color::white;
@@ -43,6 +44,8 @@ struct State {
 
   public:
     State() = default;
+
+    std::string format_game_end();
 };
 
 // a class which holds all the important data used in a game of chess.
@@ -82,7 +85,7 @@ class Position {
 
     static std::string format_fen_err(FenParseErr err);
 
-    void set_game_end_state(const MoveStack &moves);
+    State::GameEnd get_game_end_state(const MoveStack &moves) const;
 
     // makes a move and flips the active side
     void do_move(const Move &move, State &new_st);
@@ -90,11 +93,11 @@ class Position {
     void undo_move(const Move &move);
 
     // outputs the given position in FEN notation
-    void output_as_fen(std::ostream &out);
+    void output_as_fen(std::ostream &out) const;
 
     // outputs the data in the given Position and prints the board from white's perspective into the
     // given ostream
-    void output(std::ostream &out);
+    void output(std::ostream &out) const;
 };
 
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
