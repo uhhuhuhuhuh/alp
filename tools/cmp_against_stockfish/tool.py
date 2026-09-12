@@ -1,5 +1,7 @@
 """
-Finds the exact difference
+Finds the exact difference between alp's perft and stockfish's perft
+When it finds the difference it reports the fen position and the
+change
 """
 
 import re
