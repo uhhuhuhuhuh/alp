@@ -6,6 +6,7 @@
 #include "piece.hpp"
 #include "square.hpp"
 #include "zobrist.hpp"
+
 #include <bit>
 #include <cctype>
 #include <cstdint>
@@ -78,7 +79,7 @@ void chess::Position::output_as_fen(std::ostream &out) const {
         out << castle_rights_to_char(castle_rights);
     } while (static_cast<unsigned int>(castle_rights) != 0);
 
-    out << ' ' << (st->ep_sqr == ep_none ? "-" : sqr_format(st->ep_sqr));
+    out << ' ' << (st->ep_sqr == State::ep_none ? "-" : sqr_format(st->ep_sqr));
 
     out << ' ' << st->halfmove_clock;
     out << ' ' << game_ply / 2 << '\n';
@@ -160,7 +161,7 @@ handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
         if (pos.st->ep_sqr != -1) {
             break;
         }
-        pos.st->ep_sqr = ep_none;
+        pos.st->ep_sqr = State::ep_none;
         if (str != "-") {
             return Position::FenParseErr::bad_ep_sqr;
         }
@@ -277,6 +278,9 @@ chess::Position::FenParseErr chess::Position::parse_fen(std::string_view sv, Sta
         is_last_space = false;
         if (slice_start == -1) {
             slice_start = i;
+        }
+        if (i != not_board.size() - 1 && !std::isspace(not_board[i + 1])) {
+            continue;
         }
 
         std::string sub_str = not_board.substr(slice_start, i - slice_start + 1);
@@ -443,7 +447,7 @@ static inline void move_piece(Position &pos, State &st, sqr_t from, sqr_t to, ui
 void chess::Position::do_move(const Move &move, State &new_st) {
     new_st = *st;
     new_st.prev = st;
-    new_st.ep_sqr = ep_none;
+    new_st.ep_sqr = State::ep_none;
     new_st.captured_piece = board[move.to];
     new_st.active_color = !st->active_color;
     strip_castle_rights(*this, new_st, move.from, move.to);
@@ -493,12 +497,6 @@ void chess::Position::do_move(const Move &move, State &new_st) {
     }
 
     new_st.hash ^= zobrist::side();
-
-    assert(std::popcount(king_bb) == 1);
-
-    Color enemy = !board[move.to].color;
-    bb::U64 king_bb = bb.get(PieceType::king)[enemy];
-    new_st.checkers = attacks_to_sqr(*this, std::countr_zero(king_bb), enemy);
 
     st = &new_st;
 }
@@ -571,10 +569,10 @@ template <bool root> uint64_t perft_recursive(Position &pos, uint8_t depth, std:
 }
 } // namespace chess
 
-uint64_t chess::perft(Position &state, uint8_t depth, std::ostream &out) {
+uint64_t chess::perft(Position &pos, uint8_t depth, std::ostream &out) {
     Timer timer;
     timer.start();
-    auto nodes = perft_recursive<true>(state, depth, out);
+    auto nodes = perft_recursive<true>(pos, depth, out);
     timer.stop();
     auto duration = timer.duration() / 1'000'000;
     auto nps = nodes / duration;

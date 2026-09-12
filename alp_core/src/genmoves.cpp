@@ -86,7 +86,10 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
         }
 
         if (move.flag == MoveFlag::ep) {
-            return true;
+            sqr_t captured_sqr = pos.st->ep_sqr - (color == Color::white ? 8 : -8);
+            if ((1ULL << captured_sqr & pos.st->checkers) != 0) {
+                return true;
+            }
         }
 
         sqr_t checker_bb = std::countr_zero(pos.st->checkers);
@@ -306,7 +309,7 @@ void chess::gen_pawn_moves(Position &pos, sqr_t sqr, MoveStack &moves, const Pin
         }
     }
 
-    bb::U64 ep_bb = 1ULL << pos.st->ep_sqr;
+    bb::U64 ep_bb = pos.st->ep_sqr == State::ep_none ? 0 : 1ULL << pos.st->ep_sqr;
     bb::U64 attacks = bb::pawn_attacks[color][sqr] & (pos.bb.every_type()[!color] | ep_bb);
     while (attacks != 0) {
         sqr_t to = poplsb(attacks);
@@ -377,8 +380,16 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
         return moves;
     }
 
+    assert(std::popcount(king_bb) == 1);
+
     Color color = pos.st->active_color;
-    std::uint32_t checker_count = std::popcount(pos.st->checkers);
+
+    std::uint32_t checker_count = 0;
+    if constexpr (gen_type == GenType::legal) {
+        bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
+        pos.st->checkers = attacks_to_sqr(pos, std::countr_zero(king_bb), color);
+        checker_count = std::popcount(pos.st->checkers);
+    }
 
     if (checker_count > 1) {
         bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
@@ -403,12 +414,6 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
         }
     }
 
-    if constexpr (gen_type == GenType::legal) {
-        pos.st->game_end_state = pos.get_game_end_state(moves);
-        if (pos.st->game_end_state != State::GameEnd::proceed) {
-            return MoveStack{};
-        }
-    }
     return moves;
 }
 

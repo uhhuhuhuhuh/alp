@@ -7,26 +7,29 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <ostream>
 #include <string_view>
 
 namespace chess {
 enum CastleRights : uint16_t {
     none = 0,
-    white_queen = 1,
-    white_king = 2,
-    black_queen = 4,
-    black_king = 8,
+    white_king = 1,
+    white_queen = 2,
+    black_king = 4,
+    black_queen = 8,
 };
 
-constexpr sqr_t ep_none = 0;
 class State {
   public:
+    static constexpr sqr_t ep_none = -1;
+
     uint64_t hash = 0ULL;
     Color active_color = Color::white;
     uint8_t castle_rights = CastleRights::none;
     Piece captured_piece;
-    sqr_t ep_sqr = -1;
+    // set to ep_none if there is nothing to en passant
+    sqr_t ep_sqr = ep_none;
     bb::U64 checkers = 0ULL;
     uint32_t halfmove_clock = 0;
 
@@ -104,4 +107,5 @@ class Position {
 // Returns the sum of all the total nodes from each searched depth and branch.
 // (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
 uint64_t perft(Position &pos, uint8_t depth, std::ostream &out);
+uint64_t perft_map(Position &pos, uint8_t depth, std::map<Move, uint64_t> &map);
 }; // namespace chess

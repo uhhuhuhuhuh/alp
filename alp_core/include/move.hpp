@@ -4,7 +4,6 @@
 #include "square.hpp"
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <string_view>
 
 namespace chess {
@@ -32,19 +31,19 @@ struct Move {
         : from(from_), to(to_), flag(flag_), promotion_type(type) {};
 
     bool parse(std::string_view sv) {
-        if (sv.size() != 4 && sv.size() != 6) {
+        if (sv.size() != 4 && sv.size() != 5) {
             return false;
         }
 
-        auto sq = [](auto s) -> sqr_t {
+        auto sqr = [](auto s) -> sqr_t {
             return (s[0] >= 'a' && s[0] <= 'h' && s[1] >= '1' && s[1] <= '8')
                        ? s[0] - 'a' + 8 * (s[1] - '1')
                        : -1;
         };
-        sqr_t f = sq(sv.substr(0, 2));
-        sqr_t t = sq(sv.substr(2, 2));
+        sqr_t f = sqr(sv.substr(0, 2));
+        sqr_t t = sqr(sv.substr(2, 2));
 
-        if (f < 0 || t < 0 || (sv.size() == 6 && sv[4] != '=')) {
+        if (f < 0 || t < 0) {
             return false;
         }
 
@@ -56,7 +55,7 @@ struct Move {
             return true;
         }
 
-        Piece piece(sv[5]);
+        Piece piece(sv[4]);
         switch (piece.type) {
         case PieceType::knight:
         case PieceType::bishop:
@@ -72,8 +71,7 @@ struct Move {
         formated += sqr_format(from);
         formated += sqr_format(to);
         if (promotion_type != PieceType::none) {
-            formated += '=';
-            formated += Piece(promotion_type, Color::white).format();
+            formated += Piece(promotion_type, Color::black).format();
         }
         return formated;
     };

@@ -48,7 +48,7 @@ inline constexpr uint64_t castle_rights(uint8_t rights) {
 }
 
 inline constexpr uint64_t ep(sqr_t ep) {
-    if (ep == ep_none) {
+    if (ep == State::ep_none) {
         return 0;
     }
     file_t ep_file = ep % 8;
