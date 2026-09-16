@@ -1,4 +1,6 @@
 """
+---Compare against Stockfish---
+
 Finds the exact difference between alp's perft and stockfish's perft
 When it finds the difference it reports the fen position and the
 change
@@ -7,6 +9,8 @@ change
 import re
 import subprocess
 import sys
+
+has_seen_diff = False
 
 MOVE_RE = re.compile(r"\b([a-h][1-8][a-h][1-8][qrbn]?)\s*:\s*(\d+)\b")
 NODES_RE = re.compile(r"\bNodes searched:\s*(\d+)\b")
@@ -58,6 +62,7 @@ def make_move(fen: str, move: str) -> str:
 
 
 def compare_position(fen: str, depth: int) -> str | None:
+    global has_seen_diff
     _, alp_moves = run_alp(fen, depth)
     _, sf_moves = run_stockfish(fen, depth)
 
@@ -65,11 +70,13 @@ def compare_position(fen: str, depth: int) -> str | None:
     sf_set = set(sf_moves)
 
     for move in sorted(alp_set - sf_set):
-        print(f"Extra move: {move} at {fen}")
+        has_seen_diff = True
+        print(f"Extra move: {move} at depth {depth}")
         return None
 
     for move in sorted(sf_set - alp_set):
-        print(f"Missing move: {move} at {fen}")
+        has_seen_diff = True
+        print(f"Missing move: {move} at depth {depth}")
         return None
 
     for move in sorted(alp_set):
@@ -77,9 +84,9 @@ def compare_position(fen: str, depth: int) -> str | None:
         sf_nodes = sf_moves[move]
 
         if alp_nodes != sf_nodes:
+            has_seen_diff = True
             print(
-                f"Difference at depth {depth}: "
-                f"{move}: Alp={alp_nodes}, Stockfish={sf_nodes}"
+                f"Difference at depth {depth}: {move}: Alp={alp_nodes}, Stockfish={sf_nodes}"
             )
             return move
 
@@ -104,17 +111,13 @@ def main():
         move = compare_position(fen, depth)
 
         if move is None:
-            print("No differences found.")
-            break
-
-        if depth == 1:
-            print(f"Found difference at {fen}: {move}")
             break
 
         fen = make_move(fen, move)
         depth -= 1
 
-    print()
+    global has_seen_diff
+    print("" if has_seen_diff else "No differences found.\n")
     print(f"Initial FEN: {original_fen}")
     print(f"Depth:       {original_depth}")
     print(f"Stockfish:   {sf_total}")
