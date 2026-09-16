@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cctype>
 #include <cstdint>
 namespace chess {
@@ -28,6 +29,18 @@ inline Color operator!(Color color) {
     }
     return Color::white;
 }
+
+template <typename T> struct ColorArray {
+    std::array<T, 2> data{};
+
+  public:
+    constexpr ColorArray() = default;
+    constexpr ColorArray(const std::array<T, 2> &arr) : data(arr) {};
+    constexpr inline T &operator[](Color color) { return data[static_cast<std::size_t>(color)]; }
+    constexpr inline const T &operator[](Color color) const {
+        return data[static_cast<std::size_t>(color)];
+    }
+};
 
 // A class used to contain the essential data of a chess piece including its type and color
 class Piece {

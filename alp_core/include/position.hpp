@@ -2,7 +2,7 @@
 
 #include "bitboard.hpp"
 #include "move.hpp"
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "square.hpp"
 
 #include <array>
@@ -14,10 +14,10 @@
 namespace chess {
 enum CastleRights : uint16_t {
     none = 0,
-    white_king = 1,
-    white_queen = 2,
-    black_king = 4,
-    black_queen = 8,
+    white_king = 1 << 1,
+    white_queen = 1 << 2,
+    black_king = 1 << 3,
+    black_queen = 1 << 4,
 };
 
 class State {

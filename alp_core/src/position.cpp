@@ -3,7 +3,7 @@
 #include "bitboard.hpp"
 #include "genmoves.hpp"
 #include "move.hpp"
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "square.hpp"
 #include "zobrist.hpp"
 

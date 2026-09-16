@@ -1,7 +1,7 @@
 #pragma once
 
 #include "constbb.hpp"
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "square.hpp"
 
 #include <cstdint>
@@ -33,16 +33,16 @@ inline void output_bb(U64 bitboard, std::ostream &out) {
 }
 
 inline U64 get_bishop_attack(sqr_t sqr, U64 occ) {
-    occ &= bishop_tbl[sqr].mask;
-    occ *= bishop_tbl[sqr].magic;
+    occ &= bishop_atk_tbl.gmagic[sqr].mask;
+    occ *= bishop_atk_tbl.gmagic[sqr].magic;
     occ >>= (64 - bishop_bit_idxs[sqr]);
-    return bishop_attacks[bishop_offsets[sqr] + occ];
+    return bishop_atk_tbl.attacks.data[bishop_atk_tbl.attacks.offsets[sqr] + occ];
 }
 inline U64 get_rook_attack(sqr_t sqr, U64 occ) {
-    occ &= rook_tbl[sqr].mask;
-    occ *= rook_tbl[sqr].magic;
+    occ &= rook_atk_tbl.gmagic[sqr].mask;
+    occ *= rook_atk_tbl.gmagic[sqr].magic;
     occ >>= (64 - rook_bit_idxs[sqr]);
-    return rook_attacks[rook_offsets[sqr] + occ];
+    return rook_atk_tbl.attacks.data[rook_atk_tbl.attacks.offsets[sqr] + occ];
 }
 
 inline U64 xray_bishop_attack(U64 occ, U64 blockers, sqr_t bishop_sqr) {

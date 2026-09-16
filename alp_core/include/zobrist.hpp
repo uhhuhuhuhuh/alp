@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "position.hpp"
 
 namespace chess::zobrist {

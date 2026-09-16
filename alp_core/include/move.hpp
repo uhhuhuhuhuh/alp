@@ -1,6 +1,6 @@
 #pragma once
 
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "square.hpp"
 #include <cassert>
 #include <cstdint>

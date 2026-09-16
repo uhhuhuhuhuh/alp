@@ -2,7 +2,7 @@
 #include "bitboard.hpp"
 #include "constbb.hpp"
 #include "move.hpp"
-#include "piece.hpp"
+#include "piece_color.hpp"
 #include "position.hpp"
 #include "square.hpp"
 #include <array>
@@ -380,13 +380,12 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
         return moves;
     }
 
-    assert(std::popcount(king_bb) == 1);
-
     Color color = pos.st->active_color;
 
     std::uint32_t checker_count = 0;
     if constexpr (gen_type == GenType::legal) {
         bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
+        assert(std::popcount(king_bb) == 1);
         pos.st->checkers = attacks_to_sqr(pos, std::countr_zero(king_bb), color);
         checker_count = std::popcount(pos.st->checkers);
     }
