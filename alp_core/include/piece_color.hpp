@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <cctype>
 #include <cstdint>
 namespace chess {
@@ -36,8 +37,8 @@ template <typename T> struct ColorArray {
   public:
     constexpr ColorArray() = default;
     constexpr ColorArray(const std::array<T, 2> &arr) : data(arr) {};
-    constexpr inline T &operator[](Color color) { return data[static_cast<std::size_t>(color)]; }
-    constexpr inline const T &operator[](Color color) const {
+    constexpr T &operator[](Color color) { return data[static_cast<std::size_t>(color)]; }
+    constexpr const T &operator[](Color color) const {
         return data[static_cast<std::size_t>(color)];
     }
 };
@@ -50,11 +51,11 @@ class Piece {
 
   public:
     // Default piece constructor
-    inline Piece() : type(PieceType::none), color(Color::white) {}
+    Piece() : type(PieceType::none), color(Color::white) {}
     // Piece constructor
-    inline Piece(PieceType type_, Color color_) : type(type_), color(color_) {}
+    Piece(PieceType type_, Color color_) : type(type_), color(color_) {}
 
-    inline Piece(char c) {
+    Piece(char c) {
         color = std::isupper(c) ? Color::white : Color::black;
 
         switch (std::tolower(c)) {
@@ -68,9 +69,24 @@ class Piece {
         }
     }
 
-    inline char format() const {
+    char format() const {
         constexpr char chars[] = "-pnbrqk-PNBRQK";
         return chars[static_cast<int>(type) + (color == Color::white ? 7 : 0)];
+    }
+};
+
+constexpr std::size_t PieceArray_size = static_cast<uint8_t>(PieceType::king);
+// Array indexed via a PieceType
+// Can not be indexed with PieceType::none
+template <typename T> class PieceArray : std::array<T, PieceArray_size> {
+  public:
+    constexpr T &operator[](PieceType type) {
+        assert(type != PieceType::none);
+        return std::array<T, PieceArray_size>::operator[](static_cast<std::size_t>(type) - 1);
+    }
+    constexpr const T &operator[](PieceType type) const {
+        assert(type != PieceType::none);
+        return std::array<T, PieceArray_size>::operator[](static_cast<std::size_t>(type) - 1);
     }
 };
 } // namespace chess

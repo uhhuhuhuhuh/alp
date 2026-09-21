@@ -79,7 +79,6 @@ constexpr std::array<std::array<U64, 64>, 64> get_slider_between() {
 
     return slider_between;
 }
-
 constexpr auto slider_between = get_slider_between();
 
 constexpr std::size_t get_bishop_attacks_size() {
@@ -345,7 +344,7 @@ struct GMagic {
 };
 template <std::size_t size> struct AttacksTbl {
     std::array<GMagic, 64> gmagic;
-    OffsetAttacks<size> attacks;
+    OffsetAttacks<size> atks;
 };
 
 inline AttacksTbl<bishop_attacks_size> get_bishop_attack_tbl() {
@@ -373,7 +372,7 @@ inline AttacksTbl<bishop_attacks_size> get_bishop_attack_tbl() {
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =
-            find_magic(mask, bishop_bit_idxs[i], i, seed, attack_tbl.attacks, bishop_rays, offset);
+            find_magic(mask, bishop_bit_idxs[i], i, seed, attack_tbl.atks, bishop_rays, offset);
     }
     return attack_tbl;
 }
@@ -401,7 +400,7 @@ inline AttacksTbl<rook_attacks_size> get_rook_attack_tbl() {
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =
-            find_magic(mask, rook_bit_idxs[i], i, seed, attack_tbl.attacks, rook_rays, offset);
+            find_magic(mask, rook_bit_idxs[i], i, seed, attack_tbl.atks, rook_rays, offset);
     }
     return attack_tbl;
 }

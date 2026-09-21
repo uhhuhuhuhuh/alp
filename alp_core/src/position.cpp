@@ -7,9 +7,6 @@
 #include "square.hpp"
 #include "zobrist.hpp"
 
-#include <bit>
-#include <cctype>
-#include <cstdint>
 #include <iomanip>
 #include <string>
 #include <unordered_map>
@@ -33,9 +30,7 @@ std::string chess::State::format_game_end() {
 namespace chess {
 static inline char castle_rights_to_char(uint8_t &rights) {
     int index = std::countr_zero(rights);
-    if (static_cast<std::size_t>(index) < sizeof(rights) * 8) {
-        rights &= rights - 1;
-    }
+    rights &= rights - 1;
     switch (1u << index) {
     case CastleRights::white_queen: return 'Q';
     case CastleRights::white_king:  return 'K';
@@ -46,11 +41,12 @@ static inline char castle_rights_to_char(uint8_t &rights) {
 }
 } // namespace chess
 
-void chess::Position::output_as_fen(std::ostream &out) const {
+std::string chess::Position::format_as_fen() const {
+    std::string formated;
     // irank = inverted rank
     for (rank_t irank = 0; irank < 8; irank++) {
         rank_t rank = 7 - irank;
-        file_t empty_count = 0;
+        int empty_count = 0;
         for (file_t file = 0; file < 8; file++) {
             sqr_t sqr = rank * 8 + file;
             if (board[sqr].type == PieceType::none) {
@@ -58,51 +54,65 @@ void chess::Position::output_as_fen(std::ostream &out) const {
                 continue;
             }
             if (empty_count != 0) {
-                out << empty_count;
+                formated.push_back(empty_count + '0');
                 empty_count = 0;
             }
-            out << board[sqr].format();
+            formated.push_back(board[sqr].format());
         }
         if (empty_count != 0) {
-            out << empty_count;
+            formated.push_back(empty_count + '0');
             empty_count = 0;
         }
         if (irank < 7) {
-            out << '/';
+            formated.push_back('/');
         }
     }
 
-    out << ' ' << (st->active_color == Color::white ? 'w' : 'b') << ' ';
+    formated.push_back(' ');
+    formated.push_back(st->active_color == Color::white ? 'w' : 'b');
 
+    formated.push_back(' ');
     uint8_t castle_rights = st->castle_rights;
-    do {
-        out << castle_rights_to_char(castle_rights);
-    } while (static_cast<unsigned int>(castle_rights) != 0);
+    if (castle_rights == CastleRights::none) {
+        formated.push_back('-');
+    } else {
+        do {
+            formated.push_back(castle_rights_to_char(castle_rights));
+        } while (static_cast<unsigned int>(castle_rights) != 0);
+    }
 
-    out << ' ' << (st->ep_sqr == State::ep_none ? "-" : sqr_format(st->ep_sqr));
+    formated.push_back(' ');
+    formated.append(st->ep_sqr == State::ep_none ? "-" : sqr_format(st->ep_sqr));
 
-    out << ' ' << st->halfmove_clock;
-    out << ' ' << game_ply / 2 << '\n';
+    formated.push_back(' ');
+    formated.append(std::to_string(st->halfmove_clock));
+    formated.push_back(' ');
+    formated.append(std::to_string(game_ply / 2));
+    return formated;
 }
-void chess::Position::output(std::ostream &out) const {
+std::string chess::Position::format() const {
+    std::string formated;
     // irank = inverted rank
     for (rank_t irank = 0; irank < 8; irank++) {
         rank_t rank = 7 - irank;
-        out << rank + 1 << "  ";
+        formated.append(std::to_string(rank + 1) + "  ");
         for (file_t file = 0; file < 8; file++) {
             sqr_t sqr = rank * 8 + file;
-            out << board[sqr].format() << " ";
+            formated.push_back(board[sqr].format());
+            formated.push_back(' ');
         }
-        out << '\n';
+        formated.push_back('\n');
     }
-    out << '\n';
-    out << "   A B C D E F G H\n";
+    formated.push_back('\n');
+    formated.append("   A B C D E F G H\n");
 
-    output_as_fen(out);
+    formated.append(format_as_fen()).push_back('\n');
+    return formated;
 }
 
 namespace chess {
 static Position::FenParseErr set_castle_rights(Position &pos, const std::string &sub_str) {
+    pos.st->castle_rights = CastleRights::none;
     for (char c : sub_str) {
         const char as_lower = std::tolower(c);
         const bool white = std::isupper(c);
@@ -183,6 +193,9 @@ handle_non_board(On_Non_Board on, Position &pos, const std::string &str) {
                 pos.game_ply++;
             }
         } catch (const std::exception &e) {
+            return Position::FenParseErr::bad_curr_move;
+        }
+        if (pos.game_ply == 0 || pos.game_ply < pos.st->halfmove_clock) {
             return Position::FenParseErr::bad_curr_move;
         }
         break;
@@ -291,7 +304,7 @@ chess::Position::FenParseErr chess::Position::parse_fen(std::string_view sv, Sta
         slice_start = -1;
     }
 
-    if (on != On_Non_Board::move_count) {
+    if (on != On_Non_Board::move_count || pos.game_ply == 0) {
         return FenParseErr::too_few_properties;
     }
 

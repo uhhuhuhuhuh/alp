@@ -135,6 +135,8 @@ class MoveStack {
         len--;
     }
 
+    void clear() { len = 0; }
+
     constexpr chess::Move &back() {
         assert(!is_empty());
         return data[len - 1];

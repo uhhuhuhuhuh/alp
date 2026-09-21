@@ -5,10 +5,6 @@
 #include "piece_color.hpp"
 #include "position.hpp"
 #include "square.hpp"
-#include <array>
-#include <bit>
-#include <cassert>
-#include <cstdint>
 
 // returns index of least significant bit.
 static inline std::size_t poplsb(chess::bb::U64 &x) {
@@ -376,10 +372,6 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
 template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &pos) {
     MoveStack moves;
 
-    if (pos.st->game_end_state != State::GameEnd::proceed) {
-        return moves;
-    }
-
     Color color = pos.st->active_color;
 
     std::uint32_t checker_count = 0;
@@ -395,24 +387,24 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
         assert(std::popcount(king_bb) == 1);
         sqr_t king_sqr = std::countr_zero(king_bb);
         gen_king_moves<gen_type>(pos, king_sqr, moves);
-    } else [[likely]] {
-        PinBBs pin_bb = get_pins(pos, color);
-        bb::U64 occ = pos.bb.every_type()[color];
-        while (occ != 0) {
-            sqr_t sqr = poplsb(occ);
+        return moves;
+    }
+    PinBBs pin_bb = get_pins(pos, color);
+    bb::U64 occ = pos.bb.every_type()[color];
 
-            switch (pos.board[sqr].type) {
-            case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
-            case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
-            default:                break;
-            }
+    while (occ != 0) {
+        sqr_t sqr = poplsb(occ);
+
+        switch (pos.board[sqr].type) {
+        case PieceType::pawn:   gen_pawn_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pin_bb); break;
+        case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
+        default:                break;
         }
     }
-
     return moves;
 }
 

@@ -12,12 +12,12 @@
 #include <string_view>
 
 namespace chess {
-enum CastleRights : uint16_t {
+enum CastleRights : uint8_t {
     none = 0,
-    white_king = 1 << 1,
-    white_queen = 1 << 2,
-    black_king = 1 << 3,
-    black_queen = 1 << 4,
+    white_king = 1,
+    white_queen = 1 << 1,
+    black_king = 1 << 2,
+    black_queen = 1 << 3,
 };
 
 class State {
@@ -96,11 +96,11 @@ class Position {
     void undo_move(const Move &move);
 
     // outputs the given position in FEN notation
-    void output_as_fen(std::ostream &out) const;
+    std::string format_as_fen() const;
 
     // outputs the data in the given Position and prints the board from white's perspective into the
     // given ostream
-    void output(std::ostream &out) const;
+    std::string format() const;
 };
 
 // Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
