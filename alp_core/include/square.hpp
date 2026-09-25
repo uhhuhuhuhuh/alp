@@ -4,20 +4,12 @@
 #include <string_view>
 
 namespace chess {
-using sqr_t = short;
-using rank_t = short;
-using file_t = short;
+using sqr_t = int16_t;
+using rank_t = int16_t;
+using file_t = int16_t;
+using rf_t = int16_t;
 
-enum File {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-};
+enum File { A, B, C, D, E, F, G, H };
 
 // clang-format off
 enum Sqr : sqr_t {

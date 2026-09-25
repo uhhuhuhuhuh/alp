@@ -46,8 +46,8 @@ constexpr std::array<int, 64> rook_bit_idxs = {12, 11, 11, 11, 11, 11, 11, 12, 1
                                                11, 11, 10, 10, 10, 10, 10, 10, 11, 11, 10, 10, 10,
                                                10, 10, 10, 11, 12, 11, 11, 11, 11, 11, 11, 12};
 
-constexpr std::array<std::array<U64, 64>, 64> get_slider_between() {
-    decltype(get_slider_between()) slider_between{};
+constexpr auto slider_between = [] {
+    std::array<std::array<U64, 64>, 64> slider_between{};
 
     auto abs = [](sqr_t x) { return x < 0 ? -x : x; };
 
@@ -78,28 +78,24 @@ constexpr std::array<std::array<U64, 64>, 64> get_slider_between() {
     }
 
     return slider_between;
-}
-constexpr auto slider_between = get_slider_between();
+}();
 
-constexpr std::size_t get_bishop_attacks_size() {
+constexpr std::size_t bishop_attacks_size = [] {
     std::size_t size = 0;
     for (size_t i = 0; i < bishop_bit_idxs.size(); i++) {
         size += (1ULL << bishop_bit_idxs[i]);
     }
     return size;
-}
-constexpr std::size_t bishop_attacks_size = get_bishop_attacks_size();
-
-constexpr std::size_t get_rook_attacks_size() {
+}();
+constexpr std::size_t rook_attacks_size = [] {
     std::size_t size = 0;
     for (size_t i = 0; i < rook_bit_idxs.size(); i++) {
         size += (1ULL << rook_bit_idxs[i]);
     }
     return size;
-}
-constexpr std::size_t rook_attacks_size = get_rook_attacks_size();
+}();
 
-constexpr ColorArray<std::array<bb::U64, 64>> get_pawn_attacks() {
+constexpr auto pawn_attacks = [] {
     ColorArray<std::array<bb::U64, 64>> pawn_attacks{};
 
     for (std::size_t i = 0; i < 64; i++) {
@@ -108,82 +104,71 @@ constexpr ColorArray<std::array<bb::U64, 64>> get_pawn_attacks() {
         bool can_left = file > 0;
         bool can_right = file < 7;
         if (rank < 7) {
-            if (can_left)
+            if (can_left) {
                 pawn_attacks[Color::white][i] |= 1ULL << (((rank + 1) * 8) + (file - 1));
-            if (can_right)
+            }
+            if (can_right) {
                 pawn_attacks[Color::white][i] |= 1ULL << (((rank + 1) * 8) + (file + 1));
+            }
         }
         if (rank > 0) {
-            if (can_left)
+            if (can_left) {
                 pawn_attacks[Color::black][i] |= 1ULL << (((rank - 1) * 8) + (file - 1));
-            if (can_right)
+            }
+            if (can_right) {
                 pawn_attacks[Color::black][i] |= 1ULL << (((rank - 1) * 8) + (file + 1));
+            }
         }
     }
+
     return pawn_attacks;
-}
-constexpr auto pawn_attacks = get_pawn_attacks();
+}();
 
-constexpr std::array<U64, 64> get_knight_attacks() {
-    std::array<U64, 64> knight_attacks{};
+template <std::size_t size>
+constexpr std::array<U64, 64> get_attacks(std::array<std::array<int, 2>, size> offsets) {
+    std::array<U64, 64> attacks{};
 
     for (std::size_t i = 0; i < 64; i++) {
         rank_t rank = i / 8;
         rank_t file = i % 8;
-        constexpr int offsets[][2] = {
-            {2,  1 },
-            {2,  -1},
-            {-2, 1 },
-            {-2, -1},
-            {1,  2 },
-            {1,  -2},
-            {-1, 2 },
-            {-1, -2}
-        };
 
         for (auto &[dr, df] : offsets) {
             rank_t new_rank = rank + dr;
             file_t new_file = file + df;
 
             if (new_rank >= 0 && new_rank < 8 && new_file >= 0 && new_file < 8) {
-                knight_attacks[i] |= 1ULL << (new_rank * 8 + new_file);
+                attacks[i] |= 1ULL << (new_rank * 8 + new_file);
             }
         }
     }
 
-    return knight_attacks;
+    return attacks;
 }
-constexpr auto knight_attacks = get_knight_attacks();
 
-constexpr std::array<U64, 64> get_king_attacks() {
-    std::array<U64, 64> king_attacks{};
-
-    for (std::size_t i = 0; i < 64; i++) {
-        rank_t rank = i / 8;
-        rank_t file = i % 8;
-        constexpr int offsets[][2] = {
-            {1,  1 },
-            {1,  -1},
-            {1,  0 },
-            {0,  1 },
-            {0,  -1},
-            {-1, 0 },
-            {-1, 1 },
-            {-1, -1}
-        };
-
-        for (auto &[dr, df] : offsets) {
-            rank_t new_rank = rank + dr;
-            file_t new_file = file + df;
-
-            if (new_rank >= 0 && new_rank < 8 && new_file >= 0 && new_file < 8) {
-                king_attacks[i] |= 1ULL << (new_rank * 8 + new_file);
-            }
-        }
-    }
-    return king_attacks;
+constexpr auto knight_attacks = get_attacks(
+    std::array<std::array<int, 2>, 8>{
+        std::array<int, 2>{2,  1 },
+        std::array<int, 2>{2,  -1},
+        std::array<int, 2>{-2, 1 },
+        std::array<int, 2>{-2, -1},
+        std::array<int, 2>{1,  2 },
+        std::array<int, 2>{1,  -2},
+        std::array<int, 2>{-1, 2 },
+        std::array<int, 2>{-1, -2}
 }
-constexpr auto king_attacks = get_king_attacks();
+);
+constexpr auto king_attacks = get_attacks(
+    std::array<std::array<int, 2>, 8>{
+        std::array<int, 2>{1,  1 },
+        std::array<int, 2>{1,  -1},
+        std::array<int, 2>{1,  0 },
+        std::array<int, 2>{0,  1 },
+        std::array<int, 2>{0,  -1},
+        std::array<int, 2>{-1, 0 },
+        std::array<int, 2>{-1, 1 },
+        std::array<int, 2>{-1, -1}
+}
+);
 
 inline U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
     U64 bb = 0ULL;
@@ -265,7 +250,7 @@ inline U64 rook_rays(bb::U64 occ, sqr_t sqr) {
     return bb;
 }
 
-inline U64 xorshift64star(bb::U64 &x) {
+inline U64 xorshift64star(uint64_t &x) {
     x ^= x >> 12;
     x ^= x << 25;
     x ^= x >> 27;
@@ -351,7 +336,7 @@ inline AttacksTbl<bishop_attacks_size> get_bishop_attack_tbl() {
     AttacksTbl<bishop_attacks_size> attack_tbl;
     std::size_t offset = 0;
     // a random starting seed
-    U64 seed = 578;
+    uint64_t seed = 578;
 
     for (std::size_t i = 0; i < 64; i++) {
         U64 mask = 0ULL;
@@ -382,7 +367,7 @@ inline AttacksTbl<rook_attacks_size> get_rook_attack_tbl() {
     AttacksTbl<rook_attacks_size> attack_tbl;
     std::size_t offset = 0;
     // a random starting seed
-    U64 seed = 43216;
+    uint64_t seed = 43216;
 
     for (std::size_t i = 0; i < 64; i++) {
         U64 mask = 0LL;

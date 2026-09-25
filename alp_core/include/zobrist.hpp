@@ -42,7 +42,7 @@ inline constexpr uint64_t castle_rights(uint8_t rights) {
         int idx = std::countr_zero(rights);
         rights &= rights - 1;
 
-        hash |= zobrist_map[map_castle_rights_idx + idx];
+        hash ^= zobrist_map[map_castle_rights_idx + idx];
     }
     return hash;
 }

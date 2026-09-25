@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "-Wall -pedantic")
 
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+endif()
+
 project(alp)
 
 file(GLOB_RECURSE CORE_SRC_FILES alp_core/src/*.cpp)
@@ -27,6 +33,7 @@ FetchContent_MakeAvailable(wxwidgets)
 
 file(GLOB_RECURSE UI_SRC_FILES alp_ui/src/*.cpp)
 add_executable(alp ${UI_SRC_FILES})
+target_include_directories(alp PRIVATE alp_ui/include/)
 target_link_libraries(alp PRIVATE core wx::core wx::base)
 target_compile_options(alp PRIVATE
     $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>

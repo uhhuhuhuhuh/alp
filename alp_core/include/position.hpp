@@ -7,8 +7,6 @@
 
 #include <array>
 #include <cstdint>
-#include <map>
-#include <ostream>
 #include <string_view>
 
 namespace chess {
@@ -71,6 +69,9 @@ class Position {
         no_castle_rook,
         no_castle_king,
         bad_ep_sqr,
+        bad_ep_rank,
+        ep_not_empty,
+        no_ep_pawn,
         bad_halfmove,
         past_50_move,
         bad_curr_move,
@@ -102,10 +103,4 @@ class Position {
     // given ostream
     std::string format() const;
 };
-
-// Bulk-counting perft: https://joeyrobert.org/chessprogramming-wiki/Perft.html
-// Returns the sum of all the total nodes from each searched depth and branch.
-// (the link is an archive of https://www.chessprogramming.org which at the time of writing is down)
-uint64_t perft(Position &pos, uint8_t depth, std::ostream &out);
-uint64_t perft_map(Position &pos, uint8_t depth, std::map<Move, uint64_t> &map);
 }; // namespace chess
