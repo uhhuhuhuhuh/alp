@@ -1,3 +1,7 @@
+/*
+------ Compare Search Functions ------
+*/
+
 #include "engine.hpp"
 #include "fen_pos.hpp"
 #include "rng.hpp"
@@ -100,8 +104,7 @@ GameResult run_game(
 
     while (true) {
         auto &moves = engine1.gen_legal_moves();
-        bool is_active_white =
-            engine1.position().st_stack->back().active_color == chess::Color::white;
+        bool is_active_white = engine1.position().st->active_color == chess::Color::white;
         switch (engine1.position().get_game_end(moves)) {
         case chess::GameEnd::proceed: break;
         case chess::GameEnd::checkmate:

@@ -3,14 +3,18 @@
 #include "position.hpp"
 #include "tranpostable.hpp"
 
-chess::Engine::Engine() : st_stack{}, pos{st_stack}, moves{}, tt{} {}
+chess::Engine::Engine() : st_stack{}, pos{}, moves{}, tt{} {}
 chess::Engine::Engine(std::string_view fen, Position::FenParseErr &out_err)
-    : st_stack{}, pos{st_stack}, moves{}, tt{} {
+    : st_stack{}, pos{}, moves{}, tt{} {
     parse_fen(fen);
 }
 
 chess::Position::FenParseErr chess::Engine::parse_fen(std::string_view fen) {
-    return pos.parse_fen(fen);
+    auto err = pos.parse_fen(fen, st_stack.emplace());
+    if (err != Position::FenParseErr::ok) {
+        st_stack.pop();
+    }
+    return err;
 }
 
 chess::Position &chess::Engine::position() { return pos; }
@@ -20,7 +24,7 @@ const chess::MoveStack &chess::Engine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
-void chess::Engine::do_move(const Move &move) { pos.do_move(move); }
+void chess::Engine::do_move(const Move &move) { pos.do_move(move, st_stack.emplace()); }
 
 void chess::Engine::undo_move(const Move &move) {
     pos.undo_move(move);
@@ -244,7 +248,7 @@ int32_t evaluate_piece_square(const Position &pos, Color perspective) {
 } // namespace chess
 
 int32_t chess::Engine::evaluate() const {
-    Color color = st_stack.back().active_color;
+    Color color = pos.st->active_color;
 
     int32_t score = 20000 * pos.bb.count_diff(PieceType::king, color) +
                     900 * pos.bb.count_diff(PieceType::queen, color) +
@@ -266,9 +270,8 @@ int32_t chess::Engine::evaluate() const {
 }
 
 chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
-    const chess::State &curr_st = st_stack.back();
-    if (auto *entry = ctx.tt.probe(curr_st.hash)) {
-        if (entry->key == curr_st.hash)
+    if (auto *entry = ctx.tt.probe(pos.st->hash)) {
+        if (entry->key == pos.st->hash)
             return entry->best_move;
     }
 
@@ -291,7 +294,7 @@ int32_t chess::Engine::capture_score(const Move &move) {
     if (move.flag != MoveFlag::capture && move.flag != MoveFlag::ep)
         return 0;
 
-    const Color us = st_stack.back().active_color;
+    const Color us = pos.st->active_color;
 
     PieceType attacker = pos.board[move.from].type;
     PieceType victim = pos.board[move.to].type;
@@ -339,7 +342,7 @@ int32_t chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ct
         return 0;
     }
 
-    const bool in_check = st_stack.back().checkers != 0;
+    const bool in_check = pos.st->checkers != 0;
 
     if (qply >= MAX_QPLY)
         return evaluate();
@@ -365,7 +368,8 @@ int32_t chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ct
         if (!in_check && !is_capture && move.promotion_type == PieceType::none)
             continue;
 
-        pos.do_move(move);
+        State st;
+        pos.do_move(move, st);
         const int32_t score = -quiescence(-beta, -alpha, ctx, qply + 1);
         pos.undo_move(move);
 
@@ -424,8 +428,8 @@ int32_t chess::Engine::negamax(
 
     Move tt_move{};
 
-    auto *entry = ctx.tt.probe(st_stack.back().hash);
-    if (entry != nullptr && entry->key == st_stack.back().hash) {
+    auto *entry = ctx.tt.probe(pos.st->hash);
+    if (entry != nullptr && entry->key == pos.st->hash) {
         tt_move = entry->best_move;
         if (entry->depth >= depth) {
             const int32_t tt_score = score_from_tt(entry->score, ply);
@@ -457,7 +461,8 @@ int32_t chess::Engine::negamax(
             return 0;
         }
 
-        pos.do_move(move);
+        State st;
+        pos.do_move(move, st);
         int32_t score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
         pos.undo_move(move);
 
@@ -487,11 +492,10 @@ int32_t chess::Engine::negamax(
         bound = TTBound::exact;
     }
 
-    const chess::State &curr_st = st_stack.back();
     ctx.tt.set(
-        curr_st.hash,
+        pos.st->hash,
         TTentry{
-            .key = curr_st.hash,
+            .key = pos.st->hash,
             .depth = depth,
             .score = score_to_tt(best, ply),
             .bound = bound,
@@ -526,7 +530,7 @@ int32_t chess::Engine::root_search(
         }
 
         State st;
-        pos.do_move(move);
+        pos.do_move(move, st);
         int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx);
         pos.undo_move(move);
 

@@ -18,9 +18,9 @@ std::vector<TestResult> run_perft_tests() {
     for (const auto &test : chess::fen::test_positions) {
         TestResult test_result{test, 0, false};
 
-        chess::StateStack st_stack;
-        chess::Position pos(st_stack);
-        auto err = pos.parse_fen(test.fen);
+        chess::Position pos;
+        chess::State st;
+        auto err = pos.parse_fen(test.fen, st);
         if (err != chess::Position::FenParseErr::ok) {
             std::cerr << "[BUG] test fen is invalid: \n";
             std::cerr << "FEN: " << test.fen << '\n';

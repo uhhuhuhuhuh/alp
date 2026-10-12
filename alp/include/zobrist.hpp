@@ -71,12 +71,12 @@ inline uint64_t get_hash(const Position &pos) {
         hash ^= piece(type, pos.board[i].color, i);
     }
 
-    if (pos.st_stack->back().active_color == Color::black) {
+    if (pos.st->active_color == Color::black) {
         hash ^= side();
     }
 
-    hash ^= castle_rights(pos.st_stack->back().castle_rights);
-    hash ^= ep(pos.st_stack->back().ep_sqr);
+    hash ^= castle_rights(pos.st->castle_rights);
+    hash ^= ep(pos.st->ep_sqr);
 
     return hash;
 }

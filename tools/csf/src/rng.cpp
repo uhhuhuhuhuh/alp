@@ -2,14 +2,18 @@
 #include "genmoves.hpp"
 #include <random>
 
-chess::RNGEngine::RNGEngine() : st_stack{}, pos{st_stack}, moves{} {}
+chess::RNGEngine::RNGEngine() : st_stack{}, pos{}, moves{} {}
 chess::RNGEngine::RNGEngine(std::string_view fen, Position::FenParseErr &out_err)
-    : st_stack{}, pos{st_stack}, moves{} {
+    : st_stack{}, pos{}, moves{} {
     out_err = parse_fen(fen);
 }
 
 chess::Position::FenParseErr chess::RNGEngine::parse_fen(std::string_view fen) {
-    return pos.parse_fen(fen);
+    auto err = pos.parse_fen(fen, st_stack.emplace());
+    if (err != Position::FenParseErr::ok) {
+        st_stack.pop();
+    }
+    return err;
 }
 
 chess::Position &chess::RNGEngine::position() { return pos; }
@@ -19,7 +23,7 @@ const chess::MoveStack &chess::RNGEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
-void chess::RNGEngine::do_move(const Move &move) { pos.do_move(move); }
+void chess::RNGEngine::do_move(const Move &move) { pos.do_move(move, st_stack.emplace()); }
 
 void chess::RNGEngine::undo_move(const Move &move) { pos.undo_move(move); }
 

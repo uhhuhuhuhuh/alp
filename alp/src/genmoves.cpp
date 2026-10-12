@@ -8,9 +8,8 @@
 
 namespace chess {
 static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const PinBB &pin_bb) {
-    const chess::State &curr_st = pos.st_stack->back();
     const bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
-    const bool is_checked = curr_st.checkers > 0;
+    const bool is_checked = pos.st->checkers > 0;
 
     if (is_checked && is_pinned) {
         return false;
@@ -20,19 +19,19 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
     const bb::U64 to_bb = 1ULL << move.to;
 
     if (is_checked) {
-        if (to_bb & curr_st.checkers) {
+        if (to_bb & pos.st->checkers) {
             return true;
         }
 
-        const sqr_t checker_bb = lsb(curr_st.checkers);
+        const sqr_t checker_bb = lsb(pos.st->checkers);
         const sqr_t king_sqr = lsb(pos.bb.get(PieceType::king)[color]);
         if (to_bb & bb::slider_between[checker_bb][king_sqr]) {
             return true;
         }
 
         if (move.flag == MoveFlag::ep) {
-            const sqr_t captured_sqr = curr_st.ep_sqr - (color == Color::white ? 8 : -8);
-            return (1ULL << captured_sqr & curr_st.checkers) != 0;
+            const sqr_t captured_sqr = pos.st->ep_sqr - (color == Color::white ? 8 : -8);
+            return (1ULL << captured_sqr & pos.st->checkers) != 0;
         }
         return false;
     }
@@ -47,7 +46,7 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
             return true;
         }
 
-        const sqr_t captured_sqr = curr_st.ep_sqr - (color == Color::white ? 8 : -8);
+        const sqr_t captured_sqr = pos.st->ep_sqr - (color == Color::white ? 8 : -8);
 
         const Color enemy = !color;
         pos.bb.remove(PieceType::pawn, color, move.from);
@@ -165,7 +164,7 @@ static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack &mov
         return;
     }
 
-    if (pos.st_stack->back().checkers != 0) {
+    if (pos.st->checkers != 0) {
         return;
     }
 
@@ -173,7 +172,7 @@ static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack &mov
     CastleRights rights = queen_side
                               ? (is_white ? CastleRights::white_queen : CastleRights::black_queen)
                               : (is_white ? CastleRights::white_king : CastleRights::black_king);
-    if ((pos.st_stack->back().castle_rights & rights) == 0) {
+    if ((pos.st->castle_rights & rights) == 0) {
         return;
     }
 
@@ -215,7 +214,7 @@ gen_attacks(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins, bb::U
 
 template <chess::GenType gen_type>
 void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pins) {
-    Color color = pos.st_stack->back().active_color;
+    Color color = pos.st->active_color;
     const bb::U64 occ = pos.bb.occupancy();
     const bb::U64 empty = ~occ;
     const bb::U64 enemy = pos.bb.every_type()[!color];
@@ -288,7 +287,7 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
         }
     }
 
-    const sqr_t ep_sqr = pos.st_stack->back().ep_sqr;
+    const sqr_t ep_sqr = pos.st->ep_sqr;
     if (ep_sqr != State::ep_none) {
         const bb::U64 ep_bb = 1ULL << ep_sqr;
         bb::U64 ep_sources = bb::pawn_attacks[!color][ep_sqr] & pawns;
@@ -353,14 +352,14 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
 template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &pos) {
     MoveStack moves;
 
-    Color color = pos.st_stack->back().active_color;
+    Color color = pos.st->active_color;
 
     std::uint32_t checker_count = 0;
     if constexpr (gen_type == GenType::legal) {
         bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
         assert(popcount(king_bb) == 1);
-        pos.st_stack->back().checkers = pos.attacks_to_sqr(lsb(king_bb), color);
-        checker_count = popcount(pos.st_stack->back().checkers);
+        pos.st->checkers = pos.attacks_to_sqr(lsb(king_bb), color);
+        checker_count = popcount(pos.st->checkers);
     }
 
     if (checker_count > 1) {
