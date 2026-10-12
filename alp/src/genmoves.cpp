@@ -8,7 +8,7 @@
 
 namespace chess {
 static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const PinBB &pin_bb) {
-    const bool is_pinned = ((1ULL << move.from) & pin_bb.pinned) != 0;
+    const bool is_pinned = (bb::bb(move.from) & pin_bb.pinned) != 0;
     const bool is_checked = pos.st->checkers > 0;
 
     if (is_checked && is_pinned) {
@@ -16,7 +16,7 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
     }
 
     const Color color = pos.board[move.from].color;
-    const bb::U64 to_bb = 1ULL << move.to;
+    const bb::U64 to_bb = bb::bb(move.to);
 
     if (is_checked) {
         if (to_bb & pos.st->checkers) {
@@ -31,7 +31,7 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
 
         if (move.flag == MoveFlag::ep) {
             const sqr_t captured_sqr = pos.st->ep_sqr - (color == Color::white ? 8 : -8);
-            return (1ULL << captured_sqr & pos.st->checkers) != 0;
+            return bb::bb(captured_sqr) & pos.st->checkers;
         }
         return false;
     }
@@ -289,7 +289,7 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
 
     const sqr_t ep_sqr = pos.st->ep_sqr;
     if (ep_sqr != State::ep_none) {
-        const bb::U64 ep_bb = 1ULL << ep_sqr;
+        const bb::U64 ep_bb = bb::bb(ep_sqr);
         bb::U64 ep_sources = bb::pawn_attacks[!color][ep_sqr] & pawns;
         while (ep_sources) {
             const sqr_t from = poplsb(ep_sources);

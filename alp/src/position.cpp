@@ -7,6 +7,7 @@
 #include "square.hpp"
 #include "zobrist.hpp"
 
+#include <cmath>
 #include <format>
 #include <string>
 #include <unordered_map>
@@ -33,7 +34,7 @@ std::string chess::format_game_end(GameEnd game_end) {
 
 namespace chess {
 static inline char castle_rights_to_char(uint8_t &rights) {
-    switch (1u << poplsb(rights)) {
+    switch (1 << poplsb(rights)) {
     case CastleRights::white_queen: return 'Q';
     case CastleRights::white_king:  return 'K';
     case CastleRights::black_queen: return 'q';
@@ -181,7 +182,7 @@ handle_fen_non_board(OnNonBoard on, Position &pos, const std::string &str) {
         }
 
         bool is_white = pos.st->active_color == Color::white;
-        if ((1ULL << pos.st->ep_sqr & bb::ranks[is_white ? 5 : 2]) == 0) {
+        if ((bb::bb(pos.st->ep_sqr) & bb::ranks[is_white ? 5 : 2]) == 0) {
             return Position::FenParseErr::bad_ep_rank;
         }
         if (pos.board[pos.st->ep_sqr].type != PieceType::none) {
@@ -490,6 +491,7 @@ static inline void move_piece(Position &pos, State &st, sqr_t from, sqr_t to, ui
 
 void chess::Position::do_move(const Move &move, State &new_st) {
     new_st.prev = st;
+    new_st.hash = st->hash;
     new_st.ep_sqr = State::ep_none;
     new_st.captured_piece = board[move.to];
     new_st.active_color = !st->active_color;
@@ -537,7 +539,7 @@ void chess::Position::do_move(const Move &move, State &new_st) {
 
     new_st.hash ^= zobrist::ep(st->ep_sqr);
     if (new_st.ep_sqr != st->ep_sqr) {
-        new_st.hash ^= zobrist::ep(st->ep_sqr);
+        new_st.hash ^= zobrist::ep(new_st.ep_sqr);
     }
 
     new_st.hash ^= zobrist::side();
@@ -620,8 +622,8 @@ chess::PinBB chess::Position::get_pins(Color color) {
         sqr_t sqr = poplsb(pinner);
         bb::U64 between = bb::slider_between[sqr][king_sqr];
         sqr_t pinned_sqr = lsb(between & color_occ);
-        pin_bbs.pin_rays[pinned_sqr] = between | (1ULL << sqr);
-        pin_bbs.pinned |= 1ULL << pinned_sqr;
+        pin_bbs.pin_rays[pinned_sqr] = between | bb::bb(sqr);
+        pin_bbs.pinned |= bb::bb(pinned_sqr);
     }
 
     pinner = bb::xray_rook_attack(occ, color_occ, king_sqr) &
@@ -631,8 +633,8 @@ chess::PinBB chess::Position::get_pins(Color color) {
         sqr_t sqr = poplsb(pinner);
         bb::U64 between = bb::slider_between[sqr][king_sqr];
         sqr_t pinned_sqr = lsb(between & color_occ);
-        pin_bbs.pin_rays[pinned_sqr] = between | (1ULL << sqr);
-        pin_bbs.pinned |= 1ULL << pinned_sqr;
+        pin_bbs.pin_rays[pinned_sqr] = between | bb::bb(sqr);
+        pin_bbs.pinned |= bb::bb(pinned_sqr);
     }
 
     return pin_bbs;

@@ -25,7 +25,10 @@ const chess::MoveStack &chess::RNGEngine::gen_legal_moves() {
 
 void chess::RNGEngine::do_move(const Move &move) { pos.do_move(move, st_stack.emplace()); }
 
-void chess::RNGEngine::undo_move(const Move &move) { pos.undo_move(move); }
+void chess::RNGEngine::undo_move(const Move &move) {
+    pos.undo_move(move);
+    st_stack.pop();
+}
 
 int32_t chess::RNGEngine::evaluate() const { return 0; }
 

@@ -78,7 +78,7 @@ static inline uint8_t isolated(const Position &pos, Color color) {
 inline bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
     bb::U64 attacks = 0ULL;
     for (sqr_t sqr = 0; sqr < 64; ++sqr) {
-        if (pawns & (1ULL << sqr)) {
+        if (pawns & bb::bb(sqr)) {
             attacks |= bb::pawn_attacks[color][sqr];
         }
     }
@@ -106,7 +106,7 @@ inline uint8_t backward(const Position &pos, Color color) {
 
         const sqr_t stop = color == Color::white ? sqr + 8 : sqr - 8;
 
-        const bb::U64 stop_bb = 1ULL << stop;
+        const bb::U64 stop_bb = bb::bb(stop);
 
         if (!(empty & stop_bb))
             continue;
@@ -117,7 +117,7 @@ inline uint8_t backward(const Position &pos, Color color) {
         if (own_attacks & stop_bb)
             continue;
 
-        candidates |= 1ULL << sqr;
+        candidates |= bb::bb(sqr);
     }
 
     return popcount(candidates);

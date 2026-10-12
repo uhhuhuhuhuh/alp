@@ -42,27 +42,28 @@ class StateStack {
     std::size_t m_len;
     std::size_t m_total_cap;
     std::size_t m_block_count;
-    chess::State m_stack_arr[m_block_size];
+    chess::State m_stack_block[m_block_size];
     chess::State **m_blocks;
 
   private:
     void grow() {
-        m_block_count++;
+        std::size_t new_block_count = m_block_count + 1;
         m_total_cap += m_block_size;
-        chess::State **new_blocks = new chess::State *[m_block_count];
+        chess::State **new_blocks = new chess::State *[new_block_count];
         for (std::size_t i = 0; i < m_block_count; ++i) {
             new_blocks[i] = m_blocks[i];
         }
-        new_blocks[m_block_count - 1] = new chess::State[m_block_size];
+        new_blocks[new_block_count - 1] = new chess::State[m_block_size];
         delete[] m_blocks;
         m_blocks = new_blocks;
+        m_block_count = new_block_count;
     }
 
   public:
-    StateStack() : m_len(0), m_block_count(1), m_total_cap(m_block_size), m_stack_arr() {
+    StateStack() : m_len(0), m_block_count(1), m_total_cap(m_block_size), m_stack_block() {
         m_blocks = new chess::State *[m_block_count];
         // the first block will point to a stack allocated array
-        m_blocks[0] = m_stack_arr;
+        m_blocks[0] = m_stack_block;
     };
 
     ~StateStack() {

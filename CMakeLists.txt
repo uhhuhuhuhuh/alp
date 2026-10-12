@@ -44,29 +44,31 @@ endif()
 
 add_subdirectory(alp)
 
+option(ALP_BUILD_ALL "Build all the alp tools" ON)
+
 option(ALP_BUILD_GUI "Build the alp gui" ON)
-if(ALP_BUILD_GUI)
+if(ALP_BUILD_GUI OR ALP_BUILD_ALL)
     add_subdirectory(ui)
 endif()
 
 
 option(ALP_BUILD_CAS "Build the Compare Against Stockfish tool" OFF)
-if(ALP_BUILD_CAS)
+if(ALP_BUILD_CAS OR ALP_BUILD_ALL)
     add_subdirectory(tools/cas)
 endif()
 
 
 option(ALP_BUILD_GAMES "Build the Games tool" OFF)
-if(ALP_BUILD_GAMES)
+if(ALP_BUILD_GAMES OR ALP_BUILD_ALL)
     add_subdirectory(tools/games)
 endif()
 
 option(ALP_BUILD_CSF "Build the CSF tool" OFF)
-if(ALP_BUILD_CSF)
+if(ALP_BUILD_CSF OR ALP_BUILD_ALL)
     add_subdirectory(tools/csf)
 endif()
 
 option(ALP_BUILD_PERFT "Build the PERFT tool" OFF)
-if(ALP_BUILD_PERFT)
+if(ALP_BUILD_PERFT OR ALP_BUILD_ALL)
     add_subdirectory(tools/perft)
 endif()

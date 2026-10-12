@@ -4,6 +4,7 @@
 
 #include "engine.hpp"
 #include "fen_pos.hpp"
+#include "position.hpp"
 #include "rng.hpp"
 
 #include <atomic>
@@ -97,7 +98,7 @@ GameResult run_game(
     }
 
     res.start_fen = engine1.position().format_as_fen();
-    engine2.parse_fen(res.start_fen);
+    assert(engine2.parse_fen(res.start_fen) == chess::Position::FenParseErr::ok);
 
     std::uniform_int_distribution<uint8_t> dist_bool(0, 1);
     bool is_engine1_white = dist_bool(gen);

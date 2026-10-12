@@ -9,7 +9,6 @@
 #include <ostream>
 
 namespace chess::bb {
-using U64 = uint64_t;
 using BBColorArray = ColorArray<U64>;
 
 inline constexpr bool is_sqr_white(sqr_t sqr) { return (sqr & white_sqrs); }
@@ -19,16 +18,20 @@ inline void output_bb(U64 bitboard, std::ostream &out) {
     for (rank_t irank = 0; irank < 8; irank++) {
         rank_t rank = 7 - irank;
         out << rank + 1 << "  ";
-        for (file_t file = 0; file < 8; file++) {
-            sqr_t sqr = rank * 8 + file;
-            if (bitboard & (1ULL << sqr)) {
-                out << "1 ";
-                continue;
+        for (file_t i = 0; i < 8; i++) {
+            file_t file;
+            if constexpr (std::endian::native == std::endian::little) {
+                file = i;
+            } else {
+                file = 7 - i;
             }
-            out << "0 ";
+
+            sqr_t sqr = rank * 8 + file;
+            out << ((bitboard & bb(sqr)) ? "1 " : "0 ");
         }
         out << '\n';
     }
+
     out << '\n';
     out << "   A B C D E F G H\n";
 }
@@ -77,20 +80,20 @@ class PieceBB {
     U64 occupancy() const { return m_occupancy; };
 
     void place(PieceType type, Color color, sqr_t sqr) {
-        U64 sqr_bb = 1ULL << sqr;
+        U64 sqr_bb = bb(sqr);
         pieces[type][color] |= sqr_bb;
         m_every_type[color] |= sqr_bb;
         m_occupancy |= sqr_bb;
     }
     void remove(PieceType type, Color color, sqr_t sqr) {
-        U64 mask = ~(1ULL << sqr);
+        U64 mask = ~bb(sqr);
         pieces[type][color] &= mask;
         m_every_type[color] &= mask;
         m_occupancy &= mask;
     }
 
     void move(PieceType type, Color color, sqr_t from, sqr_t to) {
-        U64 to_from_bb = (1ULL << from) | (1ULL << to);
+        U64 to_from_bb = bb(from) | bb(to);
         pieces[type][color] ^= to_from_bb;
         m_every_type[color] ^= to_from_bb;
         m_occupancy ^= to_from_bb;
@@ -99,8 +102,8 @@ class PieceBB {
         PieceType type, Color color, sqr_t from, PieceType captured_type, Color captured_color,
         sqr_t to
     ) {
-        U64 from_bb = 1ULL << from;
-        U64 to_bb = 1ULL << to;
+        U64 from_bb = bb(from);
+        U64 to_bb = bb(to);
         U64 to_from_bb = from_bb | to_bb;
 
         pieces[type][color] ^= to_from_bb;

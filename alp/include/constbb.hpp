@@ -7,8 +7,11 @@
 #include <cassert>
 #include <cstdint>
 #include <vector>
+
 namespace chess::bb {
 using U64 = uint64_t;
+
+inline constexpr U64 bb(sqr_t sqr) { return 1ULL << sqr; }
 
 constexpr std::array<U64, 8> files = {
     0x101010101010101ULL,
@@ -72,7 +75,7 @@ constexpr auto slider_between = [] {
             }
 
             for (sqr_t between = from + dir; between != to; between += dir) {
-                slider_between[from][to] |= 1ULL << between;
+                slider_between[from][to] |= bb(between);
             }
         }
     }
@@ -83,20 +86,22 @@ constexpr auto slider_between = [] {
 constexpr std::size_t bishop_attacks_size = [] {
     std::size_t size = 0;
     for (size_t i = 0; i < bishop_bit_idxs.size(); i++) {
-        size += (1ULL << bishop_bit_idxs[i]);
+        size += std::endian::native == std::endian::little ? 1ULL << bishop_bit_idxs[i]
+                                                           : 1ULL >> bishop_bit_idxs[i];
     }
     return size;
 }();
 constexpr std::size_t rook_attacks_size = [] {
     std::size_t size = 0;
     for (size_t i = 0; i < rook_bit_idxs.size(); i++) {
-        size += (1ULL << rook_bit_idxs[i]);
+        size += std::endian::native == std::endian::little ? 1ULL << rook_bit_idxs[i]
+                                                           : 1ULL >> rook_bit_idxs[i];
     }
     return size;
 }();
 
 constexpr auto pawn_attacks = [] {
-    ColorArray<std::array<bb::U64, 64>> pawn_attacks{};
+    ColorArray<std::array<U64, 64>> pawn_attacks{};
 
     for (std::size_t i = 0; i < 64; i++) {
         rank_t rank = i / 8;
@@ -105,18 +110,18 @@ constexpr auto pawn_attacks = [] {
         bool can_right = file < 7;
         if (rank < 7) {
             if (can_left) {
-                pawn_attacks[Color::white][i] |= 1ULL << (((rank + 1) * 8) + (file - 1));
+                pawn_attacks[Color::white][i] |= bb(((rank + 1) * 8) + (file - 1));
             }
             if (can_right) {
-                pawn_attacks[Color::white][i] |= 1ULL << (((rank + 1) * 8) + (file + 1));
+                pawn_attacks[Color::white][i] |= bb(((rank + 1) * 8) + (file + 1));
             }
         }
         if (rank > 0) {
             if (can_left) {
-                pawn_attacks[Color::black][i] |= 1ULL << (((rank - 1) * 8) + (file - 1));
+                pawn_attacks[Color::black][i] |= bb(((rank - 1) * 8) + (file - 1));
             }
             if (can_right) {
-                pawn_attacks[Color::black][i] |= 1ULL << (((rank - 1) * 8) + (file + 1));
+                pawn_attacks[Color::black][i] |= bb(((rank - 1) * 8) + (file + 1));
             }
         }
     }
@@ -137,7 +142,7 @@ constexpr std::array<U64, 64> get_attacks(std::array<std::array<int, 2>, size> o
             file_t new_file = file + df;
 
             if (new_rank >= 0 && new_rank < 8 && new_file >= 0 && new_file < 8) {
-                attacks[i] |= 1ULL << (new_rank * 8 + new_file);
+                attacks[i] |= bb(new_rank * 8 + new_file);
             }
         }
     }
@@ -170,8 +175,8 @@ constexpr auto king_attacks = get_attacks(
 }
 );
 
-inline U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
-    U64 bb = 0ULL;
+inline U64 bishop_rays(U64 occ, sqr_t sqr) {
+    U64 rays = 0ULL;
 
     rank_t t_rank = sqr / 8;
     file_t t_file = sqr % 8;
@@ -179,35 +184,35 @@ inline U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
     file_t file = 0;
 
     for (rank = t_rank + 1, file = t_file + 1; rank < 8 && file < 8; rank++, file++) {
-        U64 at_bb = 1ULL << ((rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (rank = t_rank + 1, file = t_file - 1; rank < 8 && file >= 0; rank++, file--) {
-        U64 at_bb = 1ULL << ((rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (rank = t_rank - 1, file = t_file + 1; rank >= 0 && file < 8; rank--, file++) {
-        U64 at_bb = 1ULL << ((rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (rank = t_rank - 1, file = t_file - 1; rank >= 0 && file >= 0; rank--, file--) {
-        U64 at_bb = 1ULL << ((rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
 
-    return bb;
+    return rays;
 }
 
 inline U64 rook_rays(bb::U64 occ, sqr_t sqr) {
-    U64 bb = 0ULL;
+    U64 rays = 0ULL;
 
     rank_t t_rank = sqr / 8;
     file_t t_file = sqr % 8;
@@ -215,31 +220,31 @@ inline U64 rook_rays(bb::U64 occ, sqr_t sqr) {
     file_t file = 0;
 
     for (rank = t_rank + 1; rank < 8; rank++) {
-        U64 at_bb = 1ULL << ((rank * 8) + t_file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + t_file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (rank = t_rank - 1; rank >= 0; rank--) {
-        U64 at_bb = 1ULL << ((rank * 8) + t_file);
-        bb |= at_bb;
+        U64 at_bb = bb((rank * 8) + t_file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (file = t_file + 1; file < 8; file++) {
-        U64 at_bb = 1ULL << ((t_rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((t_rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
     for (file = t_file - 1; file >= 0; file--) {
-        U64 at_bb = 1ULL << ((t_rank * 8) + file);
-        bb |= at_bb;
+        U64 at_bb = bb((t_rank * 8) + file);
+        rays |= at_bb;
         if ((occ & at_bb) != 0)
             break;
     }
 
-    return bb;
+    return rays;
 }
 
 inline U64 xorshift64star(uint64_t &x) {
@@ -266,7 +271,8 @@ inline U64 find_magic(
     U64 mask, bb::U64 bit_idx, sqr_t sqr, bb::U64 &seed, OffsetAttacks<size> &attacks, ray_t ray,
     size_t &offset
 ) {
-    const std::size_t table_size = 1ULL << bit_idx;
+    const std::size_t table_size =
+        std::endian::native == std::endian::little ? 1ULL << bit_idx : bit_idx >> 1ULL;
     std::vector<U64> occupancies;
     std::vector<U64> ray_attacks;
     occupancies.reserve(table_size);
@@ -310,7 +316,7 @@ inline U64 find_magic(
             attacks.data[offset + idx] = ray_attacks[i];
         }
         attacks.offsets[sqr] = offset;
-        offset += (1ULL << bit_idx);
+        offset += std::endian::native == std::endian::little ? 1ULL << bit_idx : bit_idx >> 1ULL;
         return magic;
     }
 }
@@ -339,13 +345,13 @@ inline AttacksTbl<bishop_attacks_size> get_bishop_attack_tbl() {
         rank_t tr = i / 8;
         file_t tf = i % 8;
         for (r = tr + 1, f = tf + 1; r < 7 && f < 7; r++, f++)
-            mask |= (1ULL << (r * 8 + f));
+            mask |= bb(r * 8 + f);
         for (r = tr + 1, f = tf - 1; r < 7 && f > 0; r++, f--)
-            mask |= (1ULL << (r * 8 + f));
+            mask |= bb(r * 8 + f);
         for (r = tr - 1, f = tf + 1; r > 0 && f < 7; r--, f++)
-            mask |= (1ULL << (r * 8 + f));
+            mask |= bb(r * 8 + f);
         for (r = tr - 1, f = tf - 1; r > 0 && f > 0; r--, f--)
-            mask |= (1ULL << (r * 8 + f));
+            mask |= bb(r * 8 + f);
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =
@@ -367,13 +373,13 @@ inline AttacksTbl<rook_attacks_size> get_rook_attack_tbl() {
         rank_t t_rank = i / 8;
         rank_t t_file = i % 8;
         for (rank_t rank = t_rank + 1; rank < 7; rank++)
-            mask |= (1ULL << (rank * 8 + t_file));
+            mask |= bb(rank * 8 + t_file);
         for (rank_t rank = t_rank - 1; rank > 0; rank--)
-            mask |= (1ULL << (rank * 8 + t_file));
+            mask |= bb(rank * 8 + t_file);
         for (file_t file = t_file + 1; file < 7; file++)
-            mask |= (1ULL << (t_rank * 8 + file));
+            mask |= bb(t_rank * 8 + file);
         for (file_t file = t_file - 1; file > 0; file--)
-            mask |= (1ULL << (t_rank * 8 + file));
+            mask |= bb(t_rank * 8 + file);
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =
