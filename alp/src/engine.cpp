@@ -123,6 +123,8 @@ inline uint8_t backward(const Position &pos, Color color) {
     return popcount(candidates);
 }
 
+constexpr int MAX_PHASE = 24;
+
 template <typename T>
 constexpr std::array<T, 64> convert_formatted_board(const std::array<T, 64> &board) {
     std::array<T, 64> arr{};
@@ -134,10 +136,19 @@ constexpr std::array<T, 64> convert_formatted_board(const std::array<T, 64> &boa
     return arr;
 }
 
-constexpr auto pst = [] {
-    PieceArray<std::array<int16_t, 64>> result{};
+enum class GamePhase { middlegame, endgame };
 
-    result[PieceType::pawn] = convert_formatted_board<int16_t>({
+template <typename T> using PhasePST = std::array<T, 64>;
+
+template <typename T> struct PieceSquareTables {
+    PhasePST<T> middlegame;
+    PhasePST<T> endgame;
+};
+
+constexpr auto pst = [] {
+    PieceArray<PieceSquareTables<int16_t>> result{};
+
+    result[PieceType::pawn].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/   0,   0,   0,   0,   0,   0,   0,   0,
         /*7*/  10,  10,  20,  30,  30,  20,  10,  10,
@@ -147,10 +158,24 @@ constexpr auto pst = [] {
         /*3*/   5,  10,  10, -20, -20,  10,  10,   5,
         /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
         /*1*/   0,   0,   0,   0,   0,   0,   0,   0
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
-    result[PieceType::knight] = convert_formatted_board<int16_t>({
+    result[PieceType::pawn].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/   0,   0,   0,   0,   0,   0,   0,   0,
+        /*7*/  80,  80,  80,  80,  80,  80,  80,  80,
+        /*6*/  50,  50,  50,  50,  50,  50,  50,  50,
+        /*5*/  30,  30,  30,  30,  30,  30,  30,  30,
+        /*4*/  15,  15,  15,  20,  20,  15,  15,  15,
+        /*3*/   5,   5,  10,  15,  15,  10,   5,   5,
+        /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
+        /*1*/   0,   0,   0,   0,   0,   0,   0,   0
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+
+    result[PieceType::knight].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/ -50, -40, -30, -30, -30, -30, -40, -50,
         /*7*/ -40, -20,   0,   5,   5,   0, -20, -40,
@@ -160,10 +185,24 @@ constexpr auto pst = [] {
         /*3*/ -30,   0,  10,  15,  15,  10,   0, -30,
         /*2*/ -40, -20,   0,   0,   0,   0, -20, -40,
         /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
-    result[PieceType::bishop] = convert_formatted_board<int16_t>({
+    result[PieceType::knight].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/ -50, -40, -30, -30, -30, -30, -40, -50,
+        /*7*/ -40, -20,   0,   5,   5,   0, -20, -40,
+        /*6*/ -30,   5,  15,  20,  20,  15,   5, -30,
+        /*5*/ -30,   5,  20,  25,  25,  20,   5, -30,
+        /*4*/ -30,   5,  20,  25,  25,  20,   5, -30,
+        /*3*/ -30,   5,  15,  20,  20,  15,   5, -30,
+        /*2*/ -40, -20,   0,   5,   5,   0, -20, -40,
+        /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+
+    result[PieceType::bishop].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/ -20, -10, -10, -10, -10, -10, -10, -20,
         /*7*/ -10,   5,   0,   0,   0,   0,   5, -10,
@@ -173,10 +212,24 @@ constexpr auto pst = [] {
         /*3*/ -10,   0,   5,  10,  10,   5,   0, -10,
         /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
         /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
-    result[PieceType::rook] = convert_formatted_board<int16_t>({
+    result[PieceType::bishop].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/ -20, -10, -10, -10, -10, -10, -10, -20,
+        /*7*/ -10,   5,   5,   5,   5,   5,   5, -10,
+        /*6*/ -10,  10,  15,  15,  15,  15,  10, -10,
+        /*5*/ -10,   5,  15,  20,  20,  15,   5, -10,
+        /*4*/ -10,   5,  15,  20,  20,  15,   5, -10,
+        /*3*/ -10,   5,  10,  15,  15,  10,   5, -10,
+        /*2*/ -10,   5,   5,   5,   5,   5,   5, -10,
+        /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+
+    result[PieceType::rook].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/   0,   0,   5,  10,  10,   5,   0,   0,
         /*7*/   5,  10,  10,  10,  10,  10,  10,   5,
@@ -186,10 +239,24 @@ constexpr auto pst = [] {
         /*3*/  -5,   0,   0,   0,   0,   0,   0,  -5,
         /*2*/  -5,   0,   0,   0,   0,   0,   0,  -5,
         /*1*/   0,   0,   5,  10,  10,   5,   0,   0
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
-    result[PieceType::queen] = convert_formatted_board<int16_t>({
+    result[PieceType::rook].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/   0,   0,   5,  10,  10,   5,   0,   0,
+        /*7*/   5,  10,  15,  15,  15,  15,  10,   5,
+        /*6*/  -5,   0,   5,   5,   5,   5,   0,  -5,
+        /*5*/  -5,   0,   5,   5,   5,   5,   0,  -5,
+        /*4*/  -5,   0,   5,   5,   5,   5,   0,  -5,
+        /*3*/  -5,   0,   5,   5,   5,   5,   0,  -5,
+        /*2*/  -5,   0,   5,   5,   5,   5,   0,  -5,
+        /*1*/   0,   0,   5,  10,  10,   5,   0,   0
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+
+    result[PieceType::queen].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/ -20, -10, -10,  -5,  -5, -10, -10, -20,
         /*7*/ -10,   0,   5,   0,   0,   0,   0, -10,
@@ -199,10 +266,24 @@ constexpr auto pst = [] {
         /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
         /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
         /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
-    result[PieceType::king] = convert_formatted_board<int16_t>({
+    result[PieceType::queen].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/ -20, -10, -10,  -5,  -5, -10, -10, -20,
+        /*7*/ -10,   0,   5,   5,   5,   5,   0, -10,
+        /*6*/ -10,   5,  10,  10,  10,  10,   5, -10,
+        /*5*/  -5,   0,  10,  10,  10,  10,   0,  -5,
+        /*4*/   0,   0,  10,  10,  10,  10,   0,  -5,
+        /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
+        /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
+        /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+
+    result[PieceType::king].middlegame = convert_formatted_board<int16_t>({
         // clang-format off
         /*8*/ -30, -40, -40, -50, -50, -40, -40, -30,
         /*7*/ -30, -40, -40, -50, -50, -40, -40, -30,
@@ -212,19 +293,47 @@ constexpr auto pst = [] {
         /*3*/ -10, -20, -20, -20, -20, -20, -20, -10,
         /*2*/  20,  20,   0,   0,   0,   0,  20,  20,
         /*1*/  20,  30,  10,   0,   0,  10,  30,  20
-        //      A    B    C    D    E    F    G    H
+        //      A    B    C    D    F    E    G    H
+        // clang-format on
+    });
+    result[PieceType::king].endgame = convert_formatted_board<int16_t>({
+        // clang-format off
+        /*8*/ -50, -30, -30, -30, -30, -30, -30, -50,
+        /*7*/ -30, -10,   0,   5,   5,   0, -10, -30,
+        /*6*/ -30,   0,  20,  30,  30,  20,   0, -30,
+        /*5*/ -30,   5,  30,  40,  40,  30,   5, -30,
+        /*4*/ -30,   5,  30,  40,  40,  30,   5, -30,
+        /*3*/ -30,   0,  20,  30,  30,  20,   0, -30,
+        /*2*/ -30, -10,   0,   5,   5,   0, -10, -30,
+        /*1*/ -50, -30, -30, -30, -30, -30, -30, -50
+        //      A    B    C    D    F    E    G    H
         // clang-format on
     });
 
     return result;
 }();
 
-int32_t evaluate_piece_square(const Position &pos, Color perspective) {
-    int32_t score = 0;
+static int count_pieces(const Position &pos, PieceType type) {
+    return popcount(pos.bb.get(type)[Color::white]) + popcount(pos.bb.get(type)[Color::black]);
+}
+
+static int calculate_game_phase(const Position &pos) {
+    int phase = 0;
+
+    phase += 4 * count_pieces(pos, PieceType::queen);
+    phase += 2 * count_pieces(pos, PieceType::rook);
+    phase += count_pieces(pos, PieceType::bishop);
+    phase += count_pieces(pos, PieceType::knight);
+
+    return std::min(phase, MAX_PHASE);
+}
+
+static int32_t evaluate_piece_square(const Position &pos, Color perspective) {
+    int32_t mg_score = 0;
+    int32_t eg_score = 0;
 
     for (Color color : {Color::white, Color::black}) {
-        const int sign = color == perspective ? 1 : -1;
-
+        const int sign = (color == perspective) ? 1 : -1;
         for (PieceType type :
              {PieceType::pawn,
               PieceType::knight,
@@ -233,17 +342,18 @@ int32_t evaluate_piece_square(const Position &pos, Color perspective) {
               PieceType::queen,
               PieceType::king}) {
             bb::U64 pieces = pos.bb.get(type)[color];
-
             while (pieces) {
-                sqr_t sq = lsb(pieces);
+                const sqr_t sq = lsb(pieces);
                 pieces &= pieces - 1;
-                sqr_t relative_sq = color == Color::white ? sq : sq ^ 56;
-                score += sign * pst[type][relative_sq];
+                const sqr_t relative_sq = color == Color::white ? sq : sq ^ 56;
+                mg_score += sign * pst[type].middlegame[relative_sq];
+                eg_score += sign * pst[type].endgame[relative_sq];
             }
         }
     }
 
-    return score;
+    const int phase = calculate_game_phase(pos);
+    return (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 }
 } // namespace chess
 

@@ -2,10 +2,12 @@
 ------ Compare Search Functions ------
 */
 
-#include "engine.hpp"
 #include "fen_pos.hpp"
 #include "position.hpp"
+
+#include "engine.hpp"
 #include "rng.hpp"
+#include "starting.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -17,7 +19,7 @@
 #include <thread>
 #include <unordered_map>
 
-enum class EngineID { NONE, RNG, CURR };
+enum class EngineID { NONE, CURR, RNG, STARTING };
 
 struct EnginePtr {
     std::unique_ptr<chess::IEngine> ptr;
@@ -29,9 +31,10 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     EnginePtr engine_ptr{.id = id, .is_player_one = is_player_one};
 
     switch (id) {
-    case EngineID::NONE: break;
-    case EngineID::RNG:  engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
-    case EngineID::CURR: engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
+    case EngineID::NONE:     break;
+    case EngineID::RNG:      engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
+    case EngineID::CURR:     engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
+    case EngineID::STARTING: engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
     }
 
     return engine_ptr;
@@ -46,8 +49,9 @@ EngineID get_engine_id(std::string_view sv) {
                   return !std::isspace(ch);
               }));
     std::unordered_map<std::string_view, EngineID> map = {
-        {"rng",  EngineID::RNG },
-        {"curr", EngineID::CURR}
+        {"curr",  EngineID::CURR    },
+        {"rng",   EngineID::RNG     },
+        {"start", EngineID::STARTING},
     };
     auto it = map.find(str);
     if (it == map.end())
@@ -98,7 +102,7 @@ GameResult run_game(
     }
 
     res.start_fen = engine1.position().format_as_fen();
-    assert(engine2.parse_fen(res.start_fen) == chess::Position::FenParseErr::ok);
+    engine2.parse_fen(res.start_fen);
 
     std::uniform_int_distribution<uint8_t> dist_bool(0, 1);
     bool is_engine1_white = dist_bool(gen);
@@ -131,7 +135,8 @@ int main(int argc, char **argv) {
         std::cout << argv[0] << " [engine 1] [engine 2] [# of games] [time in ms] [threads]\n"
                   << "Engines:\n"
                   << "    - rng\n"
-                  << "    - curr\n";
+                  << "    - curr\n"
+                  << "    - start\n";
 
         return 0;
     }
