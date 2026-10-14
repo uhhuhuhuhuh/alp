@@ -490,12 +490,11 @@ static inline void move_piece(Position &pos, State &st, sqr_t from, sqr_t to, ui
 } // namespace chess
 
 void chess::Position::do_move(const Move &move, State &new_st) {
+    new_st = *st;
     new_st.prev = st;
-    new_st.hash = st->hash;
     new_st.ep_sqr = State::ep_none;
     new_st.captured_piece = board[move.to];
-    new_st.active_color = !st->active_color;
-    new_st.castle_rights = st->castle_rights;
+    new_st.active_color = !new_st.active_color;
     strip_castle_rights(*this, new_st, move.from, move.to);
     set_halfmove_clock(*this, new_st, move);
     game_ply++;

@@ -6,6 +6,7 @@
 #include "position.hpp"
 
 #include "engine.hpp"
+#include "phase.hpp"
 #include "rng.hpp"
 #include "starting.hpp"
 
@@ -19,7 +20,7 @@
 #include <thread>
 #include <unordered_map>
 
-enum class EngineID { NONE, CURR, RNG, STARTING };
+enum class EngineID { NONE, CURR, RNG, STARTING, PHASE };
 
 struct EnginePtr {
     std::unique_ptr<chess::IEngine> ptr;
@@ -35,6 +36,7 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     case EngineID::RNG:      engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
     case EngineID::CURR:     engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
     case EngineID::STARTING: engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
+    case EngineID::PHASE:    engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
     }
 
     return engine_ptr;
@@ -52,6 +54,7 @@ EngineID get_engine_id(std::string_view sv) {
         {"curr",  EngineID::CURR    },
         {"rng",   EngineID::RNG     },
         {"start", EngineID::STARTING},
+        {"phase", EngineID::PHASE   },
     };
     auto it = map.find(str);
     if (it == map.end())

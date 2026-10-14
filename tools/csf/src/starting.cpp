@@ -6,7 +6,7 @@
 chess::StartingEngine::StartingEngine() : st_stack{}, pos{}, moves{}, tt{} {}
 chess::StartingEngine::StartingEngine(std::string_view fen, Position::FenParseErr &out_err)
     : st_stack{}, pos{}, moves{}, tt{} {
-    parse_fen(fen);
+    out_err = parse_fen(fen);
 }
 
 chess::Position::FenParseErr chess::StartingEngine::parse_fen(std::string_view fen) {

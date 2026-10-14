@@ -6,7 +6,7 @@
 chess::Engine::Engine() : st_stack{}, pos{}, moves{}, tt{} {}
 chess::Engine::Engine(std::string_view fen, Position::FenParseErr &out_err)
     : st_stack{}, pos{}, moves{}, tt{} {
-    parse_fen(fen);
+    out_err = parse_fen(fen);
 }
 
 chess::Position::FenParseErr chess::Engine::parse_fen(std::string_view fen) {
@@ -387,51 +387,154 @@ chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
 
     return Move{};
 }
+
 namespace chess {
-static constexpr int32_t piece_value(PieceType type) {
+static constexpr int color_index(Color c) { return c == Color::white ? 0 : 1; }
+
+static constexpr int move_piece_value(PieceType type) {
     switch (type) {
     case PieceType::pawn:   return 100;
     case PieceType::knight: return 300;
     case PieceType::bishop: return 300;
     case PieceType::rook:   return 500;
     case PieceType::queen:  return 900;
-    case PieceType::king:   return 2000;
+    case PieceType::king:   return 20000;
     default:                return 0;
     }
 }
+
+static bool is_capture(const Move &move) {
+    return move.flag == MoveFlag::capture || move.flag == MoveFlag::ep;
+}
+
+static bool is_quiet(const Move &move) {
+    return !is_capture(move) && move.promotion_type == PieceType::none;
+}
+
+static int move_history_index(const Move &move) {
+    return static_cast<int>(move.from) * 64 + static_cast<int>(move.to);
+}
 } // namespace chess
-int32_t chess::Engine::capture_score(const Move &move) {
-    if (move.flag != MoveFlag::capture && move.flag != MoveFlag::ep)
-        return 0;
 
-    const Color us = pos.st->active_color;
+chess::Engine::MovePicker::MovePicker(
+    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, int ply, Color side,
+    const MoveHeuristics &heuristics
+)
+    : m_pos(pos), m_side(side), m_heuristics(heuristics) {
 
-    PieceType attacker = pos.board[move.from].type;
-    PieceType victim = pos.board[move.to].type;
-    if (move.flag == MoveFlag::ep) {
-        victim = PieceType::pawn;
+    if (contains(legal_moves, tt_move)) {
+        m_tt_move = tt_move;
+        m_has_tt_move = true;
     }
 
-    return 10 * (piece_value(victim) - piece_value(attacker));
-}
-int32_t chess::Engine::move_score(const Move &move, const Move &pv_move, const Move &tt_move) {
-    if (move == pv_move)
-        return 10'000'000;
+    for (const Move &move : legal_moves) {
+        if (m_has_tt_move && move == m_tt_move)
+            continue;
 
-    if (move == tt_move)
-        return 9'000'000;
+        if (move.promotion_type != PieceType::none) {
+            m_good_captures.push_back(move);
+            continue;
+        }
 
-    if (move.flag == MoveFlag::capture || move.flag == MoveFlag::ep)
-        return 5'000'000 + capture_score(move);
+        if (is_capture(move)) {
+            if (capture_order_score(move) >= 0)
+                m_good_captures.push_back(move);
+            else
+                m_bad_captures.push_back(move);
 
-    return 0;
-}
+            continue;
+        }
 
-void chess::Engine::order_moves(MoveStack &moves, const Move &pv_move, const Move &tt_move) {
-    std::stable_sort(moves.begin(), moves.end(), [&](const Move &a, const Move &b) {
-        return move_score(a, pv_move, tt_move) > move_score(b, pv_move, tt_move);
+        bool is_killer = false;
+
+        if (ply >= 0 && ply < Engine::MAX_KILLER_PLY && is_quiet(move)) {
+            for (const Move &killer : m_heuristics.killers[ply]) {
+                if (killer == move) {
+                    m_killers.push_back(move);
+                    is_killer = true;
+                    break;
+                }
+            }
+        }
+
+        if (!is_killer)
+            m_quiets.push_back(move);
+    }
+
+    std::sort(m_good_captures.begin(), m_good_captures.end(), [&](const Move &a, const Move &b) {
+        return tactical_score(a) > tactical_score(b);
+    });
+
+    std::sort(m_bad_captures.begin(), m_bad_captures.end(), [&](const Move &a, const Move &b) {
+        return tactical_score(a) > tactical_score(b);
     });
 }
+
+bool chess::Engine::MovePicker::next(Move &move) {
+    if (m_has_tt_move) {
+        m_has_tt_move = false;
+        move = m_tt_move;
+        return true;
+    }
+
+    if (m_good_index < m_good_captures.size()) {
+        move = m_good_captures[m_good_index++];
+        return true;
+    }
+
+    if (m_killer_index < m_killers.size()) {
+        move = m_killers[m_killer_index++];
+        return true;
+    }
+
+    if (!m_quiets.empty()) {
+        const int ci = color_index(m_side);
+        auto best =
+            std::max_element(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
+                return m_heuristics.history[ci][move_history_index(a)] <
+                       m_heuristics.history[ci][move_history_index(b)];
+            });
+        move = *best;
+        m_quiets.erase(best);
+        return true;
+    }
+
+    if (m_bad_index < m_bad_captures.size()) {
+        move = m_bad_captures[m_bad_index++];
+        return true;
+    }
+
+    return false;
+}
+
+bool chess::Engine::MovePicker::contains(const MoveStack &moves, const Move &target) {
+    if (target == Move{})
+        return false;
+
+    return std::find(moves.begin(), moves.end(), target) != moves.end();
+}
+
+int chess::Engine::MovePicker::capture_order_score(const Move &move) const {
+    const PieceType attacker = m_pos.board[move.from].type;
+
+    const PieceType victim =
+        move.flag == MoveFlag::ep ? PieceType::pawn : m_pos.board[move.to].type;
+
+    return move_piece_value(victim) - move_piece_value(attacker);
+}
+
+int chess::Engine::MovePicker::tactical_score(const Move &move) const {
+    if (move.promotion_type != PieceType::none) {
+        return 100000 + move_piece_value(move.promotion_type);
+    }
+
+    const PieceType attacker = m_pos.board[move.from].type;
+    const PieceType victim =
+        move.flag == MoveFlag::ep ? PieceType::pawn : m_pos.board[move.to].type;
+
+    return 16 * move_piece_value(victim) - move_piece_value(attacker);
+}
+
 void chess::Engine::update_pv(SearchContext &ctx, uint16_t ply, const Move &move) {
     if (ply >= MAX_PLY - 1)
         return;
@@ -446,7 +549,8 @@ void chess::Engine::update_pv(SearchContext &ctx, uint16_t ply, const Move &move
     ctx.pv_length[ply] = child_length + 1;
 }
 
-int32_t chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int qply) {
+int32_t
+chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply) {
     if (Clock::now() >= ctx.deadline) {
         ctx.stopped = true;
         return 0;
@@ -454,16 +558,16 @@ int32_t chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ct
 
     const bool in_check = pos.st->checkers != 0;
 
-    if (qply >= MAX_QPLY)
-        return evaluate();
-
     auto moves = gen_moves<GenType::legal>(pos);
 
     const GameEnd end = pos.get_game_end(moves);
     if (end == GameEnd::checkmate)
-        return -MATE_SCORE;
+        return -MATE_SCORE + ply;
     if (end != GameEnd::proceed)
         return 0;
+
+    if (qply >= MAX_QPLY)
+        return evaluate();
 
     if (!in_check) {
         const int32_t stand_pat = evaluate();
@@ -531,7 +635,7 @@ int32_t chess::Engine::negamax(
     }
 
     if (depth == 0)
-        return quiescence(alpha, beta, ctx);
+        return quiescence(alpha, beta, ctx, ply);
 
     const int32_t original_alpha = alpha;
     const int32_t original_beta = beta;
@@ -560,12 +664,13 @@ int32_t chess::Engine::negamax(
     if (ply < ctx.prev_pv_length)
         pv_move = ctx.prev_pv[ply];
 
-    order_moves(moves, pv_move, tt_move);
+    MovePicker picker(pos, moves, tt_move, ply, pos.st->active_color, ctx.heuristics);
 
     int32_t best = -INF;
     Move best_move{};
 
-    for (const auto &move : moves) {
+    Move move;
+    while (picker.next(move)) {
         if (Clock::now() >= ctx.deadline) {
             ctx.stopped = true;
             return 0;
@@ -573,7 +678,7 @@ int32_t chess::Engine::negamax(
 
         State st;
         pos.do_move(move, st);
-        int32_t score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+        const int32_t score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
         pos.undo_move(move);
 
         if (ctx.stopped)
@@ -589,8 +694,25 @@ int32_t chess::Engine::negamax(
             update_pv(ctx, ply, move);
         }
 
-        if (alpha >= beta)
+        if (alpha >= beta) {
+            if (is_quiet(move) && ply < MAX_KILLER_PLY) {
+                auto &killers = ctx.heuristics.killers[ply];
+                if (!(killers[0] == move)) {
+                    killers[1] = killers[0];
+                    killers[0] = move;
+                }
+
+                const int ci = color_index(pos.st->active_color);
+
+                const int index = move_history_index(move);
+                const int bonus = depth * depth;
+
+                auto &history = ctx.heuristics.history[ci][index];
+                history += bonus - history * bonus / 16384;
+                history = std::clamp(history, -16384, 16384);
+            }
             break;
+        }
     }
 
     TTBound bound;
@@ -631,9 +753,10 @@ int32_t chess::Engine::root_search(
 
     Move tt_move = get_tt_move(ctx);
 
-    order_moves(root_moves, pv_move, tt_move);
+    MovePicker picker(pos, root_moves, tt_move, 0, pos.st->active_color, ctx.heuristics);
 
-    for (const auto &move : root_moves) {
+    Move move;
+    while (picker.next(move)) {
         if (Clock::now() >= ctx.deadline) {
             ctx.stopped = true;
             return 0;
@@ -641,7 +764,7 @@ int32_t chess::Engine::root_search(
 
         State st;
         pos.do_move(move, st);
-        int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx);
+        const int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx);
         pos.undo_move(move);
 
         if (ctx.stopped)
@@ -652,11 +775,13 @@ int32_t chess::Engine::root_search(
             iteration_best = move;
 
             ctx.pv[0][0] = move;
-            for (int i = 0; i < ctx.pv_length[1]; ++i) {
+
+            for (int i = 0; i < ctx.pv_length[1]; ++i)
                 ctx.pv[0][i + 1] = ctx.pv[1][i];
-            }
+
             ctx.pv_length[0] = ctx.pv_length[1] + 1;
         }
+
         alpha = std::max(alpha, score);
     }
 

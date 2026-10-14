@@ -40,7 +40,15 @@ class Engine : public IEngine {
     static constexpr int32_t MAX_PLY = 256;
     static constexpr int32_t MATE_THRESHOLD = MATE_SCORE - MAX_PLY;
 
+    static constexpr int MAX_KILLER_PLY = MAX_PLY;
+    static constexpr int HISTORY_SIZE = 64 * 64;
+
     static constexpr int MAX_QPLY = 16;
+
+    struct MoveHeuristics {
+        std::array<std::array<Move, 2>, Engine::MAX_KILLER_PLY> killers{};
+        std::array<std::array<int32_t, Engine::HISTORY_SIZE>, 2> history{};
+    };
 
     struct SearchContext {
         Clock::time_point deadline;
@@ -53,6 +61,41 @@ class Engine : public IEngine {
 
         std::array<chess::Move, MAX_PLY> prev_pv{};
         int prev_pv_length = 0;
+
+        MoveHeuristics heuristics;
+    };
+
+    class MovePicker {
+      public:
+        MovePicker(
+            const Position &pos, const MoveStack &legal_moves, const Move &tt_move, int ply,
+            Color side, const MoveHeuristics &heuristics
+        );
+
+        bool next(Move &move);
+
+      private:
+        const Position &m_pos;
+        Color m_side;
+        const MoveHeuristics &m_heuristics;
+
+        Move m_tt_move{};
+        bool m_has_tt_move = false;
+
+        std::vector<Move> m_good_captures;
+        std::vector<Move> m_killers;
+        std::vector<Move> m_quiets;
+        std::vector<Move> m_bad_captures;
+
+        std::size_t m_good_index = 0;
+        std::size_t m_killer_index = 0;
+        std::size_t m_bad_index = 0;
+
+        bool contains(const MoveStack &moves, const Move &target);
+
+        int capture_order_score(const Move &move) const;
+
+        int tactical_score(const Move &move) const;
     };
 
   public:
@@ -67,7 +110,7 @@ class Engine : public IEngine {
     int32_t move_score(const Move &move, const Move &pv_move, const Move &tt_move);
     void order_moves(MoveStack &moves, const Move &pv_move, const Move &tt_move);
     void update_pv(SearchContext &ctx, uint16_t ply, const Move &move);
-    int32_t quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int qply = 0);
+    int32_t quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply = 0);
     int32_t score_to_tt(int32_t score, uint16_t ply);
     int32_t score_from_tt(int32_t score, uint16_t ply);
     int32_t negamax(uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx);
