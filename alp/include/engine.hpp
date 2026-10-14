@@ -68,8 +68,8 @@ class Engine : public IEngine {
     class MovePicker {
       public:
         MovePicker(
-            const Position &pos, const MoveStack &legal_moves, const Move &tt_move, int ply,
-            Color side, const MoveHeuristics &heuristics
+            const Position &pos, const MoveStack &legal_moves, const Move &tt_move,
+            const Move &pv_move, int ply, Color side, const MoveHeuristics &heuristics
         );
 
         bool next(Move &move);
@@ -81,6 +81,10 @@ class Engine : public IEngine {
 
         Move m_tt_move{};
         bool m_has_tt_move = false;
+
+        Move m_pv_move{};
+        bool m_has_pv_move = false;
+        bool m_pv_move_pending = false;
 
         std::vector<Move> m_good_captures;
         std::vector<Move> m_killers;

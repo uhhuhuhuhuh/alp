@@ -417,18 +417,26 @@ static int move_history_index(const Move &move) {
 } // namespace chess
 
 chess::Engine::MovePicker::MovePicker(
-    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, int ply, Color side,
-    const MoveHeuristics &heuristics
+    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, const Move &pv_move,
+    int ply, Color side, const MoveHeuristics &heuristics
 )
     : m_pos(pos), m_side(side), m_heuristics(heuristics) {
-
     if (contains(legal_moves, tt_move)) {
         m_tt_move = tt_move;
         m_has_tt_move = true;
     }
 
+    if (contains(legal_moves, pv_move) && (!m_has_tt_move || !(pv_move == m_tt_move))) {
+        m_pv_move = pv_move;
+        m_has_pv_move = true;
+        m_pv_move_pending = true;
+    }
+
     for (const Move &move : legal_moves) {
         if (m_has_tt_move && move == m_tt_move)
+            continue;
+
+        if (m_has_pv_move && move == m_pv_move)
             continue;
 
         if (move.promotion_type != PieceType::none) {
@@ -474,6 +482,12 @@ bool chess::Engine::MovePicker::next(Move &move) {
     if (m_has_tt_move) {
         m_has_tt_move = false;
         move = m_tt_move;
+        return true;
+    }
+
+    if (m_pv_move_pending) {
+        m_pv_move_pending = false;
+        move = m_pv_move;
         return true;
     }
 
@@ -566,6 +580,27 @@ chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int p
     if (end != GameEnd::proceed)
         return 0;
 
+    if (qply >= MAX_QPLY && !in_check)
+        return evaluate();
+
+    constexpr int MAX_QPLY_HARD = MAX_QPLY + 8;
+    if (qply >= MAX_QPLY_HARD) {
+        int32_t best = -INF;
+
+        for (const auto &move : moves) {
+            State st;
+            pos.do_move(move, st);
+            const int32_t score = -evaluate();
+            pos.undo_move(move);
+
+            best = std::max(best, score);
+            if (best >= beta)
+                return best;
+        }
+
+        return best;
+    }
+
     if (qply >= MAX_QPLY)
         return evaluate();
 
@@ -584,7 +619,7 @@ chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int p
 
         State st;
         pos.do_move(move, st);
-        const int32_t score = -quiescence(-beta, -alpha, ctx, qply + 1);
+        const int32_t score = -quiescence(-beta, -alpha, ctx, ply + 1, qply + 1);
         pos.undo_move(move);
 
         if (ctx.stopped)
@@ -664,7 +699,7 @@ int32_t chess::Engine::negamax(
     if (ply < ctx.prev_pv_length)
         pv_move = ctx.prev_pv[ply];
 
-    MovePicker picker(pos, moves, tt_move, ply, pos.st->active_color, ctx.heuristics);
+    MovePicker picker(pos, moves, tt_move, pv_move, ply, pos.st->active_color, ctx.heuristics);
 
     int32_t best = -INF;
     Move best_move{};
@@ -753,7 +788,7 @@ int32_t chess::Engine::root_search(
 
     Move tt_move = get_tt_move(ctx);
 
-    MovePicker picker(pos, root_moves, tt_move, 0, pos.st->active_color, ctx.heuristics);
+    MovePicker picker(pos, root_moves, pv_move, tt_move, 0, pos.st->active_color, ctx.heuristics);
 
     Move move;
     while (picker.next(move)) {
