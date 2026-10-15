@@ -43,6 +43,8 @@ class Engine : public IEngine {
     static constexpr int MAX_KILLER_PLY = MAX_PLY;
     static constexpr int HISTORY_SIZE = 64 * 64;
 
+    static constexpr int32_t ASPIRATION_WINDOW = 25;
+
     static constexpr int MAX_QPLY = 16;
 
     static constexpr uint64_t TIME_CHECK_INTERVAL = 1024;
@@ -97,6 +99,7 @@ class Engine : public IEngine {
 
         std::size_t m_good_index = 0;
         std::size_t m_killer_index = 0;
+        std::size_t m_quiet_index = 0;
         std::size_t m_bad_index = 0;
 
         bool contains(const MoveStack &moves, const Move &target);
@@ -123,8 +126,10 @@ class Engine : public IEngine {
     int32_t score_to_tt(int32_t score, uint16_t ply);
     int32_t score_from_tt(int32_t score, uint16_t ply);
     int32_t negamax(uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx);
-    int32_t
-    root_search(chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move);
+    int32_t root_search(
+        chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha,
+        int32_t beta, Move &best_move
+    );
 
   public:
     Engine();

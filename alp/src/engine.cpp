@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "genmoves.hpp"
+#include "piece_color.hpp"
 #include "position.hpp"
 #include "tranpostable.hpp"
 
@@ -36,9 +37,9 @@ static uint8_t doubled(const Position &pos, Color color) {
     bb::U64 pawns = pos.bb.get(PieceType::pawn)[color];
     int8_t doubled = 0;
     for (uint8_t file = 0; file < 8; ++file) {
-        if (popcount(pawns & bb::files[file]) > 1) {
-            ++doubled;
-        }
+        const int count = popcount(pawns & bb::files[file]);
+        if (count > 1)
+            doubled += count - 1;
     }
     return doubled;
 }
@@ -75,17 +76,14 @@ static inline uint8_t isolated(const Position &pos, Color color) {
     return count;
 }
 
-inline bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
-    bb::U64 attacks = 0ULL;
-    for (sqr_t sqr = 0; sqr < 64; ++sqr) {
-        if (pawns & bb::bb(sqr)) {
-            attacks |= bb::pawn_attacks[color][sqr];
-        }
+inline static bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
+    if (color == Color::white) {
+        return ((pawns & ~bb::files[File::A]) << 7) | ((pawns & ~bb::files[File::H]) << 9);
     }
-    return attacks;
+    return ((pawns & ~bb::files[File::A]) >> 9) | ((pawns & ~bb::files[File::H]) >> 7);
 }
 
-inline uint8_t backward(const Position &pos, Color color) {
+inline static uint8_t backward(const Position &pos, Color color) {
     const bb::U64 own_pawns = pos.bb.get(PieceType::pawn)[color];
     const bb::U64 enemy_pawns = pos.bb.get(PieceType::pawn)[!color];
 
@@ -158,7 +156,7 @@ constexpr auto pst = [] {
         /*3*/   5,  10,  10, -20, -20,  10,  10,   5,
         /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
         /*1*/   0,   0,   0,   0,   0,   0,   0,   0
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::pawn].endgame = convert_formatted_board<int16_t>({
@@ -171,7 +169,7 @@ constexpr auto pst = [] {
         /*3*/   5,   5,  10,  15,  15,  10,   5,   5,
         /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
         /*1*/   0,   0,   0,   0,   0,   0,   0,   0
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -185,7 +183,7 @@ constexpr auto pst = [] {
         /*3*/ -30,   0,  10,  15,  15,  10,   0, -30,
         /*2*/ -40, -20,   0,   0,   0,   0, -20, -40,
         /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::knight].endgame = convert_formatted_board<int16_t>({
@@ -198,7 +196,7 @@ constexpr auto pst = [] {
         /*3*/ -30,   5,  15,  20,  20,  15,   5, -30,
         /*2*/ -40, -20,   0,   5,   5,   0, -20, -40,
         /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -212,7 +210,7 @@ constexpr auto pst = [] {
         /*3*/ -10,   0,   5,  10,  10,   5,   0, -10,
         /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
         /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::bishop].endgame = convert_formatted_board<int16_t>({
@@ -225,7 +223,7 @@ constexpr auto pst = [] {
         /*3*/ -10,   5,  10,  15,  15,  10,   5, -10,
         /*2*/ -10,   5,   5,   5,   5,   5,   5, -10,
         /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -239,7 +237,7 @@ constexpr auto pst = [] {
         /*3*/  -5,   0,   0,   0,   0,   0,   0,  -5,
         /*2*/  -5,   0,   0,   0,   0,   0,   0,  -5,
         /*1*/   0,   0,   5,  10,  10,   5,   0,   0
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::rook].endgame = convert_formatted_board<int16_t>({
@@ -252,7 +250,7 @@ constexpr auto pst = [] {
         /*3*/  -5,   0,   5,   5,   5,   5,   0,  -5,
         /*2*/  -5,   0,   5,   5,   5,   5,   0,  -5,
         /*1*/   0,   0,   5,  10,  10,   5,   0,   0
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -266,7 +264,7 @@ constexpr auto pst = [] {
         /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
         /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
         /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::queen].endgame = convert_formatted_board<int16_t>({
@@ -279,7 +277,7 @@ constexpr auto pst = [] {
         /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
         /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
         /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -293,7 +291,7 @@ constexpr auto pst = [] {
         /*3*/ -10, -20, -20, -20, -20, -20, -20, -10,
         /*2*/  20,  20,   0,   0,   0,   0,  20,  20,
         /*1*/  20,  30,  10,   0,   0,  10,  30,  20
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
     result[PieceType::king].endgame = convert_formatted_board<int16_t>({
@@ -306,7 +304,7 @@ constexpr auto pst = [] {
         /*3*/ -30,   0,  20,  30,  30,  20,   0, -30,
         /*2*/ -30, -10,   0,   5,   5,   0, -10, -30,
         /*1*/ -50, -30, -30, -30, -30, -30, -30, -50
-        //      A    B    C    D    F    E    G    H
+        //      A    B    C    D    E    F    G    H
         // clang-format on
     });
 
@@ -405,6 +403,50 @@ chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
 namespace chess {
 static constexpr int color_index(Color c) { return c == Color::white ? 0 : 1; }
 
+static constexpr std::array<PieceType, 6> SEE_ORDER = {
+    PieceType::pawn,
+    PieceType::knight,
+    PieceType::bishop,
+    PieceType::rook,
+    PieceType::queen,
+    PieceType::king
+};
+
+struct SeeState {
+    PieceArray<ColorArray<bb::U64>> pieces{};
+    bb::U64 occupied{};
+
+    bb::U64 &get(PieceType type, Color color) { return pieces[type][color]; }
+    bb::U64 get(PieceType type, Color color) const { return pieces[type][color]; }
+};
+
+static SeeState make_see_state(const Position &pos) {
+    SeeState state{};
+    state.occupied = pos.bb.occupancy();
+
+    for (Color color : {Color::white, Color::black}) {
+        for (PieceType type : SEE_ORDER) {
+            state.get(type, color) = pos.bb.get(type)[color];
+        }
+    }
+
+    return state;
+}
+
+static bb::U64 attackers_to(const SeeState &state, sqr_t square, Color by) {
+    const bb::U64 pawns = state.get(PieceType::pawn, by);
+    const bb::U64 knights = state.get(PieceType::knight, by);
+    const bb::U64 bishops = state.get(PieceType::bishop, by);
+    const bb::U64 rooks = state.get(PieceType::rook, by);
+    const bb::U64 queens = state.get(PieceType::queen, by);
+    const bb::U64 kings = state.get(PieceType::king, by);
+
+    return (bb::pawn_attacks[!by][square] & pawns) | (bb::knight_attacks[square] & knights) |
+           (bb::king_attacks[square] & kings) |
+           (bb::get_bishop_attack(square, state.occupied) & (bishops | queens)) |
+           (bb::get_rook_attack(square, state.occupied) & (rooks | queens));
+}
+
 static constexpr int move_piece_value(PieceType type) {
     switch (type) {
     case PieceType::pawn:   return 100;
@@ -440,13 +482,121 @@ static int lmr_reduction(int depth, int move_index) {
 
     return 1;
 }
+
+static int static_exchange_eval(const Position &pos, const Move &move) {
+    if (!is_capture(move))
+        return 0;
+
+    const Color us = pos.st->active_color;
+    const Color them = !us;
+
+    const sqr_t from = move.from;
+    const sqr_t target = move.to;
+
+    const PieceType mover = pos.board[from].type;
+    const PieceType victim = move.flag == MoveFlag::ep ? PieceType::pawn : pos.board[target].type;
+
+    const int captured_square_index =
+        static_cast<int>(target) + (move.flag == MoveFlag::ep ? (us == Color::white ? -8 : 8) : 0);
+
+    const sqr_t captured_square = static_cast<sqr_t>(captured_square_index);
+
+    const bb::U64 from_bb = bb::bb(from);
+    const bb::U64 target_bb = bb::bb(target);
+    const bb::U64 captured_bb = bb::bb(captured_square);
+
+    SeeState state = make_see_state(pos);
+
+    std::array<int, 32> gain{};
+    int depth = 0;
+
+    gain[0] = move_piece_value(victim);
+
+    PieceType occupant = mover;
+    if (move.promotion_type != PieceType::none) {
+        gain[0] += move_piece_value(move.promotion_type) - move_piece_value(PieceType::pawn);
+        occupant = move.promotion_type;
+    }
+
+    state.get(victim, them) &= ~captured_bb;
+    state.get(mover, us) &= ~from_bb;
+    state.get(occupant, us) |= target_bb;
+
+    state.occupied &= ~from_bb;
+    state.occupied &= ~captured_bb;
+    state.occupied |= target_bb;
+
+    Color side = them;
+
+    while (depth + 1 < static_cast<int>(gain.size())) {
+        const bb::U64 attackers = attackers_to(state, target, side);
+
+        PieceType attacker_type = PieceType::none;
+        sqr_t attacker_square = 0;
+        for (PieceType type : SEE_ORDER) {
+            const bb::U64 candidates = attackers & state.get(type, side);
+
+            if (candidates) {
+                attacker_type = type;
+                attacker_square = lsb(candidates);
+                break;
+            }
+        }
+
+        if (attacker_type == PieceType::none)
+            break;
+
+        const bb::U64 attacker_bb = bb::bb(attacker_square);
+
+        const bool promotes =
+            attacker_type == PieceType::pawn && (side == Color::white ? target >= 56 : target < 8);
+
+        const PieceType landed_type = promotes ? PieceType::queen : attacker_type;
+
+        const int promotion_bonus =
+            promotes ? move_piece_value(PieceType::queen) - move_piece_value(PieceType::pawn) : 0;
+
+        if (attacker_type == PieceType::king) {
+            SeeState after = state;
+            after.get(occupant, !side) &= ~target_bb;
+            after.get(PieceType::king, side) &= ~attacker_bb;
+            after.get(PieceType::king, side) |= target_bb;
+            after.occupied &= ~attacker_bb;
+
+            if (attackers_to(after, target, !side))
+                break;
+        }
+
+        gain[++depth] = move_piece_value(occupant) + promotion_bonus - gain[depth - 1];
+
+        state.get(occupant, !side) &= ~target_bb;
+        state.get(attacker_type, side) &= ~attacker_bb;
+        state.get(landed_type, side) |= target_bb;
+
+        state.occupied &= ~attacker_bb;
+
+        occupant = landed_type;
+
+        if (attacker_type == PieceType::king)
+            break;
+
+        side = !side;
+    }
+
+    while (depth > 0) {
+        gain[depth - 1] = -std::max(-gain[depth - 1], gain[depth]);
+        --depth;
+    }
+
+    return gain[0];
+}
 } // namespace chess
 
 chess::Engine::MovePicker::MovePicker(
     const Position &pos, const MoveStack &legal_moves, const Move &tt_move, const Move &pv_move,
     int ply, Color side, const MoveHeuristics &heuristics
 )
-    : m_pos(pos), m_side(side), m_heuristics(heuristics) {
+    : m_pos(pos), m_side(side), m_heuristics(heuristics), m_quiet_index(0) {
     if (contains(legal_moves, tt_move)) {
         m_tt_move = tt_move;
         m_has_tt_move = true;
@@ -470,12 +620,16 @@ chess::Engine::MovePicker::MovePicker(
             continue;
         }
 
+        if (move.promotion_type != PieceType::none && !is_capture(move)) {
+            m_good_captures.push_back(move);
+            continue;
+        }
+
         if (is_capture(move)) {
             if (capture_order_score(move) >= 0)
                 m_good_captures.push_back(move);
             else
                 m_bad_captures.push_back(move);
-
             continue;
         }
 
@@ -529,14 +683,14 @@ bool chess::Engine::MovePicker::next(Move &move) {
 
     if (!m_quiets.empty()) {
         const int ci = color_index(m_side);
-        auto best =
-            std::max_element(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
-                return m_heuristics.history[ci][move_history_index(a)] <
-                       m_heuristics.history[ci][move_history_index(b)];
-            });
-        move = *best;
-        m_quiets.erase(best);
-        return true;
+        std::sort(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
+            return m_heuristics.history[ci][move_history_index(a)] >
+                   m_heuristics.history[ci][move_history_index(b)];
+        });
+        if (m_quiet_index < m_quiets.size()) {
+            move = m_quiets[m_quiet_index++];
+            return true;
+        }
     }
 
     if (m_bad_index < m_bad_captures.size()) {
@@ -555,12 +709,7 @@ bool chess::Engine::MovePicker::contains(const MoveStack &moves, const Move &tar
 }
 
 int chess::Engine::MovePicker::capture_order_score(const Move &move) const {
-    const PieceType attacker = m_pos.board[move.from].type;
-
-    const PieceType victim =
-        move.flag == MoveFlag::ep ? PieceType::pawn : m_pos.board[move.to].type;
-
-    return move_piece_value(victim) - move_piece_value(attacker);
+    return static_exchange_eval(m_pos, move);
 }
 
 int chess::Engine::MovePicker::tactical_score(const Move &move) const {
@@ -660,19 +809,20 @@ int32_t chess::Engine::score_from_tt(int32_t score, uint16_t ply) {
 int32_t chess::Engine::negamax(
     uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx
 ) {
+    ctx.pv_length[ply] = 0;
+
     if (should_stop(ctx))
         return 0;
 
-    auto moves = chess::gen_moves<GenType::legal>(pos);
+    if (depth == 0)
+        return quiescence(alpha, beta, ctx, ply, 0);
 
+    auto moves = chess::gen_moves<GenType::legal>(pos);
     switch (pos.get_game_end(moves)) {
     case GameEnd::proceed:   break;
     case GameEnd::checkmate: return -MATE_SCORE + ply;
     default:                 return 0;
     }
-
-    if (depth == 0)
-        return quiescence(alpha, beta, ctx, ply, 0);
 
     const int32_t original_alpha = alpha;
     const int32_t original_beta = beta;
@@ -798,15 +948,13 @@ int32_t chess::Engine::negamax(
 }
 
 int32_t chess::Engine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha, int32_t beta,
+    Move &best_move
 ) {
-    int32_t alpha = -INF;
-    int32_t beta = INF;
     int32_t best_score = -INF;
 
     Move iteration_best = NO_MOVE;
     Move pv_move = NO_MOVE;
-
     if (ctx.prev_pv_length > 0)
         pv_move = ctx.prev_pv[0];
 
@@ -832,20 +980,22 @@ int32_t chess::Engine::root_search(
         if (score > best_score) {
             best_score = score;
             iteration_best = move;
+        }
+
+        if (score > alpha) {
+            alpha = score;
 
             ctx.pv[0][0] = move;
-
             for (int i = 0; i < ctx.pv_length[1]; ++i)
                 ctx.pv[0][i + 1] = ctx.pv[1][i];
-
             ctx.pv_length[0] = ctx.pv_length[1] + 1;
         }
 
-        alpha = std::max(alpha, score);
+        if (alpha >= beta)
+            break;
     }
 
     best_move = iteration_best;
-
     return best_score;
 }
 
@@ -864,19 +1014,43 @@ chess::Engine::SearchResult chess::Engine::search(std::chrono::milliseconds time
             break;
 
         ctx.stopped = false;
-        ctx.prev_pv_length = ctx.pv_length[0];
 
-        for (int i = 0; i < ctx.prev_pv_length; ++i) {
+        ctx.prev_pv_length = ctx.pv_length[0];
+        for (int i = 0; i < ctx.prev_pv_length; ++i)
             ctx.prev_pv[i] = ctx.pv[0][i];
-        }
         ctx.pv_length.fill(0);
-        Move iteration_best = result.best_move;
+
+        int32_t delta = ASPIRATION_WINDOW;
+
+        int32_t alpha = depth > 1 ? std::max(-INF, result.score - delta) : -INF;
+        int32_t beta = depth > 1 ? std::min(INF, result.score + delta) : INF;
 
         int32_t iteration_score = -INF;
+        Move iteration_best = result.best_move;
+        while (true) {
+            ctx.pv_length.fill(0);
+            iteration_best = result.best_move;
 
-        iteration_score = root_search(root_moves, depth, ctx, iteration_best);
+            iteration_score = root_search(root_moves, depth, ctx, alpha, beta, iteration_best);
+
+            if (ctx.stopped)
+                break;
+
+            if (iteration_score <= alpha) {
+                beta = alpha + (beta - alpha) / 2;
+                alpha = std::max(-INF, iteration_score - delta);
+            } else if (iteration_score >= beta) {
+                beta = std::min(INF, iteration_score + delta);
+            } else {
+                break;
+            }
+
+            delta = delta >= INF / 2 ? INF : delta * 2;
+        }
+
         if (ctx.stopped)
             break;
+
         result.best_move = iteration_best;
         result.score = iteration_score;
         result.depth = depth;
