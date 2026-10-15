@@ -112,9 +112,9 @@ class Frame : public wxFrame {
             return;
         }
         const auto &moves = m_engine.gen_legal_moves();
-        handle_game_end(m_engine.pos.get_game_end(moves));
         m_board->clear_selection();
         m_board->Refresh();
+        handle_game_end(m_engine.pos.get_game_end(moves));
     }
     void starting_pos(wxCommandEvent &) {
         parse_fen(chess::fen::starting_pos);

@@ -379,13 +379,27 @@ int32_t chess::Engine::evaluate() const {
     return score;
 }
 
+bool chess::Engine::should_stop(SearchContext &ctx) {
+    ctx.nodes++;
+
+    if ((ctx.nodes % TIME_CHECK_INTERVAL) != 0)
+        return false;
+
+    if (Clock::now() >= ctx.deadline) {
+        ctx.stopped = true;
+        return true;
+    }
+
+    return false;
+}
+
 chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
     if (auto *entry = ctx.tt.probe(pos.st->hash)) {
         if (entry->key == pos.st->hash)
             return entry->best_move;
     }
 
-    return Move{};
+    return NO_MOVE;
 }
 
 namespace chess {
@@ -413,6 +427,18 @@ static bool is_quiet(const Move &move) {
 
 static int move_history_index(const Move &move) {
     return static_cast<int>(move.from) * 64 + static_cast<int>(move.to);
+}
+
+static int lmr_reduction(int depth, int move_index) {
+    if (depth < 3 || move_index < 4) {
+        return 0;
+    }
+
+    if (depth >= 6 && move_index >= 8) {
+        return 2;
+    }
+
+    return 1;
 }
 } // namespace chess
 
@@ -522,7 +548,7 @@ bool chess::Engine::MovePicker::next(Move &move) {
 }
 
 bool chess::Engine::MovePicker::contains(const MoveStack &moves, const Move &target) {
-    if (target == Move{})
+    if (target == NO_MOVE)
         return false;
 
     return std::find(moves.begin(), moves.end(), target) != moves.end();
@@ -565,10 +591,8 @@ void chess::Engine::update_pv(SearchContext &ctx, uint16_t ply, const Move &move
 
 int32_t
 chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply) {
-    if (Clock::now() >= ctx.deadline) {
-        ctx.stopped = true;
+    if (should_stop(ctx))
         return 0;
-    }
 
     const bool in_check = pos.st->checkers != 0;
 
@@ -581,27 +605,6 @@ chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int p
         return 0;
 
     if (qply >= MAX_QPLY && !in_check)
-        return evaluate();
-
-    constexpr int MAX_QPLY_HARD = MAX_QPLY + 8;
-    if (qply >= MAX_QPLY_HARD) {
-        int32_t best = -INF;
-
-        for (const auto &move : moves) {
-            State st;
-            pos.do_move(move, st);
-            const int32_t score = -evaluate();
-            pos.undo_move(move);
-
-            best = std::max(best, score);
-            if (best >= beta)
-                return best;
-        }
-
-        return best;
-    }
-
-    if (qply >= MAX_QPLY)
         return evaluate();
 
     if (!in_check) {
@@ -657,12 +660,11 @@ int32_t chess::Engine::score_from_tt(int32_t score, uint16_t ply) {
 int32_t chess::Engine::negamax(
     uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx
 ) {
-    if (Clock::now() >= ctx.deadline) {
-        ctx.stopped = true;
+    if (should_stop(ctx))
         return 0;
-    }
 
     auto moves = chess::gen_moves<GenType::legal>(pos);
+
     switch (pos.get_game_end(moves)) {
     case GameEnd::proceed:   break;
     case GameEnd::checkmate: return -MATE_SCORE + ply;
@@ -670,50 +672,72 @@ int32_t chess::Engine::negamax(
     }
 
     if (depth == 0)
-        return quiescence(alpha, beta, ctx, ply);
+        return quiescence(alpha, beta, ctx, ply, 0);
 
     const int32_t original_alpha = alpha;
     const int32_t original_beta = beta;
 
-    Move tt_move{};
-
     auto *entry = ctx.tt.probe(pos.st->hash);
+    Move tt_move = NO_MOVE;
+
     if (entry != nullptr && entry->key == pos.st->hash) {
         tt_move = entry->best_move;
         if (entry->depth >= depth) {
             const int32_t tt_score = score_from_tt(entry->score, ply);
-
             switch (entry->bound) {
             case TTBound::exact: return tt_score;
-            case TTBound::lower: alpha = std::max(alpha, tt_score); break;
-            case TTBound::upper: beta = std::min(beta, tt_score); break;
-            }
+            case TTBound::lower:
+                if (tt_score >= beta)
+                    return tt_score;
 
-            if (alpha >= beta)
-                return tt_score;
+                alpha = std::max(alpha, tt_score);
+                break;
+            case TTBound::upper:
+                if (tt_score <= alpha)
+                    return tt_score;
+
+                beta = std::min(beta, tt_score);
+                break;
+            }
         }
     }
 
-    Move pv_move{};
+    Move pv_move = NO_MOVE;
 
     if (ply < ctx.prev_pv_length)
         pv_move = ctx.prev_pv[ply];
 
+    const bool in_check = pos.st->checkers != 0;
+
     MovePicker picker(pos, moves, tt_move, pv_move, ply, pos.st->active_color, ctx.heuristics);
 
     int32_t best = -INF;
-    Move best_move{};
+    Move best_move = NO_MOVE;
+    int move_index = 0;
 
     Move move;
     while (picker.next(move)) {
-        if (Clock::now() >= ctx.deadline) {
-            ctx.stopped = true;
-            return 0;
-        }
+        ++move_index;
 
         State st;
         pos.do_move(move, st);
-        const int32_t score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+
+        int32_t score;
+
+        if (move_index == 1) {
+            score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+        } else {
+            const int reduction =
+                !in_check && is_quiet(move) ? lmr_reduction(depth, move_index) : 0;
+            score = -negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, ctx);
+            if (reduction > 0 && score > alpha) {
+                score = -negamax(depth - 1, ply + 1, -alpha - 1, -alpha, ctx);
+            }
+            if (score > alpha && score < beta) {
+                score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+            }
+        }
+
         pos.undo_move(move);
 
         if (ctx.stopped)
@@ -746,6 +770,7 @@ int32_t chess::Engine::negamax(
                 history += bonus - history * bonus / 16384;
                 history = std::clamp(history, -16384, 16384);
             }
+
             break;
         }
     }
@@ -758,7 +783,6 @@ int32_t chess::Engine::negamax(
     } else {
         bound = TTBound::exact;
     }
-
     ctx.tt.set(
         pos.st->hash,
         TTentry{
@@ -780,15 +804,15 @@ int32_t chess::Engine::root_search(
     int32_t beta = INF;
     int32_t best_score = -INF;
 
-    Move iteration_best{};
-    Move pv_move{};
+    Move iteration_best = NO_MOVE;
+    Move pv_move = NO_MOVE;
 
     if (ctx.prev_pv_length > 0)
         pv_move = ctx.prev_pv[0];
 
     Move tt_move = get_tt_move(ctx);
 
-    MovePicker picker(pos, root_moves, pv_move, tt_move, 0, pos.st->active_color, ctx.heuristics);
+    MovePicker picker(pos, root_moves, tt_move, pv_move, 0, pos.st->active_color, ctx.heuristics);
 
     Move move;
     while (picker.next(move)) {
@@ -826,7 +850,7 @@ int32_t chess::Engine::root_search(
 }
 
 chess::Engine::SearchResult chess::Engine::search(std::chrono::milliseconds time) {
-    SearchContext ctx{.deadline = Clock::now() + time, .stopped = false, .tt = tt};
+    SearchContext ctx{.deadline = Clock::now() + time, .stopped = false, .tt = tt, .nodes = 0};
 
     SearchResult result;
 

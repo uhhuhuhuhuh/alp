@@ -13,7 +13,7 @@ enum class TTBound : uint8_t { exact, lower, upper };
 
 struct TTentry {
     uint64_t key = 0;
-    uint8_t depth = 0;
+    int16_t depth = 0;
     int32_t score = 0;
     TTBound bound = TTBound::exact;
     Move best_move{};

@@ -45,6 +45,8 @@ class Engine : public IEngine {
 
     static constexpr int MAX_QPLY = 16;
 
+    static constexpr uint64_t TIME_CHECK_INTERVAL = 1024;
+
     struct MoveHeuristics {
         std::array<std::array<Move, 2>, Engine::MAX_KILLER_PLY> killers{};
         std::array<std::array<int32_t, Engine::HISTORY_SIZE>, 2> history{};
@@ -63,6 +65,8 @@ class Engine : public IEngine {
         int prev_pv_length = 0;
 
         MoveHeuristics heuristics;
+
+        uint64_t nodes = 0;
     };
 
     class MovePicker {
@@ -109,6 +113,7 @@ class Engine : public IEngine {
     TransposTable<64> tt;
 
   private:
+    bool should_stop(SearchContext &ctx);
     Move get_tt_move(SearchContext &ctx);
     int32_t capture_score(const Move &move);
     int32_t move_score(const Move &move, const Move &pv_move, const Move &tt_move);

@@ -5,6 +5,7 @@
 #include "fen_pos.hpp"
 #include "position.hpp"
 
+#include "check.hpp"
 #include "engine.hpp"
 #include "lazy.hpp"
 #include "phase.hpp"
@@ -21,7 +22,7 @@
 #include <thread>
 #include <unordered_map>
 
-enum class EngineID { NONE, CURR, RNG, STARTING, PHASE, LAZY };
+enum class EngineID { NONE, CURR, RNG, STARTING, PHASE, LAZY, CHECK };
 
 struct EnginePtr {
     std::unique_ptr<chess::IEngine> ptr;
@@ -39,6 +40,7 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     case EngineID::STARTING: engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
     case EngineID::PHASE:    engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
     case EngineID::LAZY:     engine_ptr.ptr = std::make_unique<chess::LazyEngine>(); break;
+    case EngineID::CHECK:    engine_ptr.ptr = std::make_unique<chess::CheckEngine>(); break;
     }
 
     return engine_ptr;
@@ -58,6 +60,7 @@ EngineID get_engine_id(std::string_view sv) {
         {"start", EngineID::STARTING},
         {"phase", EngineID::PHASE   },
         {"lazy",  EngineID::LAZY    },
+        {"check", EngineID::CHECK   },
     };
     auto it = map.find(str);
     if (it == map.end())
