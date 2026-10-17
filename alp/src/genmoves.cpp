@@ -7,25 +7,19 @@
 #include "square.hpp"
 
 namespace chess {
-static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const PinBB &pin_bb) {
-    const bool is_pinned = (bb::bb(move.from) & pin_bb.pinned) != 0;
-    const bool is_checked = pos.st->checkers > 0;
 
-    if (is_checked && is_pinned) {
+static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const LegalCtx &ctx) {
+    const bool is_pinned = (bb::bb(move.from) & ctx.pin_bb.pinned) != 0;
+
+    if (ctx.in_check && is_pinned) {
         return false;
     }
 
     const Color color = pos.board[move.from].color;
     const bb::U64 to_bb = bb::bb(move.to);
 
-    if (is_checked) {
-        if (to_bb & pos.st->checkers) {
-            return true;
-        }
-
-        const sqr_t checker_bb = lsb(pos.st->checkers);
-        const sqr_t king_sqr = lsb(pos.bb.get(PieceType::king)[color]);
-        if (to_bb & bb::slider_between[checker_bb][king_sqr]) {
+    if (ctx.in_check) {
+        if (to_bb & ctx.evasion_mask) {
             return true;
         }
 
@@ -37,7 +31,7 @@ static bool is_pseudo_non_king_move_legal(Position &pos, const Move &move, const
     }
 
     if (is_pinned) {
-        return (to_bb & pin_bb.pin_rays[move.from]) != 0;
+        return (to_bb & ctx.pin_bb.pin_rays[move.from]) != 0;
     }
 
     if (move.flag == MoveFlag::ep) {
@@ -97,7 +91,7 @@ static inline bool is_self_check(Position &pos, const Move &move, Color color) {
 
 template <GenType gen_type, typename legal_fn>
 static inline void push_move(
-    Position &pos, sqr_t from, sqr_t to, uint8_t flags, PieceType promotion, MoveStack &moves,
+    Position &pos, sqr_t from, sqr_t to, uint8_t flags, PieceType promotion, MoveStack<> &moves,
     legal_fn is_legal
 ) {
     if constexpr (gen_type != GenType::legal) {
@@ -112,7 +106,7 @@ static inline void push_move(
 
 template <GenType gen_type>
 static inline void
-push_king_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack &moves) {
+push_king_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack<> &moves) {
     Color color = pos.board[from].color;
 
     push_move<gen_type>(
@@ -123,37 +117,33 @@ push_king_move(Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack &mo
 }
 template <GenType gen_type>
 static inline void push_non_king_move(
-    Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack &moves, const PinBB &pins,
+    Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack<> &moves, const LegalCtx &ctx,
     PieceType promotion = PieceType::none
 ) {
-    push_move<gen_type>(pos, from, to, flags, promotion, moves, [&pins](Position &pos, Move &move) {
-        return is_pseudo_non_king_move_legal(pos, move, pins);
+    push_move<gen_type>(pos, from, to, flags, promotion, moves, [&](Position &pos, Move &move) {
+        return is_pseudo_non_king_move_legal(pos, move, ctx);
     });
 }
 template <GenType gen_type>
 static inline void push_promotions(
-    Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack &moves, const PinBB &pins
+    Position &pos, sqr_t from, sqr_t to, uint8_t flags, MoveStack<> &moves, const LegalCtx &ctx
 ) {
     constexpr std::array<PieceType, 4> promotion_types = {
         PieceType::knight, PieceType::bishop, PieceType::rook, PieceType::queen
     };
     for (PieceType type : promotion_types) {
-        push_non_king_move<gen_type>(pos, from, to, flags, moves, pins, type);
+        push_non_king_move<gen_type>(pos, from, to, flags, moves, ctx, type);
     }
 }
 
 template <GenType gen_type>
-static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack &moves) {
+static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack<> &moves) {
     if (to > 63 || from > 63 || to < 0 || from < 0) {
         return;
     }
 
     const Piece &from_piece = pos.board[from], to_piece = pos.board[to];
     assert(from_piece.type == PieceType::king);
-
-    if (to_piece.type != PieceType::none && to_piece.color == from_piece.color) {
-        return;
-    }
 
     rank_t from_rank = from / 8, to_rank = to / 8;
     file_t from_file = from % 8, to_file = to % 8;
@@ -201,19 +191,19 @@ static void push_king_castle(Position &pos, sqr_t from, sqr_t to, MoveStack &mov
 
 template <chess::GenType gen_type>
 static inline void
-gen_attacks(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins, bb::U64 attacks) {
+gen_attacks(Position &pos, sqr_t sqr, MoveStack<> &moves, const LegalCtx &ctx, bb::U64 attacks) {
     Color color = pos.board[sqr].color;
     bb::U64 attack_bb = attacks & ~(pos.bb.every_type()[color]);
     while (attack_bb != 0) {
         sqr_t to = poplsb(attack_bb);
         uint8_t flag = pos.board[to].type == PieceType::none ? MoveFlag::quiet : MoveFlag::capture;
-        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, pins);
+        push_non_king_move<gen_type>(pos, sqr, to, flag, moves, ctx);
     }
 }
 } // namespace chess
 
 template <chess::GenType gen_type>
-void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pins) {
+void chess::gen_pawn_moves_bulk(Position &pos, MoveStack<> &moves, const LegalCtx &ctx) {
     Color color = pos.st->active_color;
     const bb::U64 occ = pos.bb.occupancy();
     const bb::U64 empty = ~occ;
@@ -232,13 +222,13 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
     while (push_quiets != 0) {
         const sqr_t to = poplsb(push_quiets);
         const sqr_t from = to + (white ? -8 : 8);
-        push_non_king_move<gen_type>(pos, from, to, MoveFlag::quiet, moves, pins);
+        push_non_king_move<gen_type>(pos, from, to, MoveFlag::quiet, moves, ctx);
     }
     bb::U64 push_promos = single & promotion_rank;
     while (push_promos != 0) {
         const sqr_t to = poplsb(push_promos);
         const sqr_t from = to + (white ? -8 : 8);
-        push_promotions<gen_type>(pos, from, to, MoveFlag::quiet, moves, pins);
+        push_promotions<gen_type>(pos, from, to, MoveFlag::quiet, moves, ctx);
     }
 
     bb::U64 double_pushes;
@@ -252,7 +242,7 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
     while (double_pushes) {
         const sqr_t to = poplsb(double_pushes);
         const sqr_t from = to + (white ? -16 : 16);
-        push_non_king_move<gen_type>(pos, from, to, MoveFlag::ep_victim, moves, pins);
+        push_non_king_move<gen_type>(pos, from, to, MoveFlag::ep_victim, moves, ctx);
     }
 
     bb::U64 captures_left;
@@ -273,7 +263,7 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
         bb::U64 sources = bb::pawn_attacks[!color][to] & pawns;
         while (sources) {
             const sqr_t from = poplsb(sources);
-            push_non_king_move<gen_type>(pos, from, to, MoveFlag::capture, moves, pins);
+            push_non_king_move<gen_type>(pos, from, to, MoveFlag::capture, moves, ctx);
         }
     }
 
@@ -283,7 +273,7 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
         bb::U64 sources = bb::pawn_attacks[!color][to] & pawns;
         while (sources) {
             const sqr_t from = poplsb(sources);
-            push_promotions<gen_type>(pos, from, to, MoveFlag::capture, moves, pins);
+            push_promotions<gen_type>(pos, from, to, MoveFlag::capture, moves, ctx);
         }
     }
 
@@ -293,48 +283,48 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack &moves, const PinBB &pi
         bb::U64 ep_sources = bb::pawn_attacks[!color][ep_sqr] & pawns;
         while (ep_sources) {
             const sqr_t from = poplsb(ep_sources);
-            push_non_king_move<gen_type>(pos, from, ep_sqr, MoveFlag::ep, moves, pins);
+            push_non_king_move<gen_type>(pos, from, ep_sqr, MoveFlag::ep, moves, ctx);
         }
     }
 }
 
 template <chess::GenType gen_type>
-void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins) {
+void chess::gen_knight_moves(Position &pos, sqr_t sqr, MoveStack<> &moves, const LegalCtx &ctx) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::knight);
 
-    gen_attacks<gen_type>(pos, sqr, moves, pins, bb::knight_attacks[sqr]);
+    gen_attacks<gen_type>(pos, sqr, moves, ctx, bb::knight_attacks[sqr]);
 }
 
 template <chess::GenType gen_type>
-void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins) {
+void chess::gen_bishop_moves(Position &pos, sqr_t sqr, MoveStack<> &moves, const LegalCtx &ctx) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::bishop);
 
-    gen_attacks<gen_type>(pos, sqr, moves, pins, bb::get_bishop_attack(sqr, pos.bb.occupancy()));
+    gen_attacks<gen_type>(pos, sqr, moves, ctx, bb::get_bishop_attack(sqr, pos.bb.occupancy()));
 }
 
 template <chess::GenType gen_type>
-void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins) {
+void chess::gen_rook_moves(Position &pos, sqr_t sqr, MoveStack<> &moves, const LegalCtx &ctx) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::rook);
 
-    gen_attacks<gen_type>(pos, sqr, moves, pins, bb::get_rook_attack(sqr, pos.bb.occupancy()));
+    gen_attacks<gen_type>(pos, sqr, moves, ctx, bb::get_rook_attack(sqr, pos.bb.occupancy()));
 }
 
 template <chess::GenType gen_type>
-void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveStack &moves, const PinBB &pins) {
+void chess::gen_queen_moves(Position &pos, sqr_t sqr, MoveStack<> &moves, const LegalCtx &ctx) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::queen);
 
     bb::U64 occ = pos.bb.occupancy();
     gen_attacks<gen_type>(
-        pos, sqr, moves, pins, bb::get_rook_attack(sqr, occ) | bb::get_bishop_attack(sqr, occ)
+        pos, sqr, moves, ctx, bb::get_rook_attack(sqr, occ) | bb::get_bishop_attack(sqr, occ)
     );
 }
 
 template <chess::GenType gen_type>
-void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
+void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack<> &moves) {
     assert(sqr >= 0 && sqr < 64);
     assert(pos.board[sqr].type == PieceType::king);
 
@@ -349,40 +339,54 @@ void chess::gen_king_moves(Position &pos, sqr_t sqr, MoveStack &moves) {
     push_king_castle<gen_type>(pos, sqr, sqr - 2, moves);
 }
 
-template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &pos) {
-    MoveStack moves;
+template <chess::GenType gen_type> chess::MoveStack<> chess::gen_moves(Position &pos) {
+    MoveStack<> moves;
 
     Color color = pos.st->active_color;
 
+    bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
+    assert(popcount(king_bb) == 1); // this assertion failes
+    sqr_t king_sqr = lsb(king_bb);
+
     std::uint32_t checker_count = 0;
     if constexpr (gen_type == GenType::legal) {
-        bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
-        assert(popcount(king_bb) == 1);
-        pos.st->checkers = pos.attacks_to_sqr(lsb(king_bb), color);
+        pos.st->checkers = pos.attacks_to_sqr(king_sqr, color);
         checker_count = popcount(pos.st->checkers);
     }
 
     if (checker_count > 1) {
-        bb::U64 king_bb = pos.bb.get(PieceType::king)[color];
-        assert(popcount(king_bb) == 1);
-        sqr_t king_sqr = lsb(king_bb);
         gen_king_moves<gen_type>(pos, king_sqr, moves);
         return moves;
     }
 
-    PinBB pins = pos.get_pins(color);
+    PinBB pin_bb = pos.get_pins(color);
 
-    gen_pawn_moves_bulk<gen_type>(pos, moves, pins);
+    const bb::U64 checkers = pos.st->checkers;
+    const bool in_check = checker_count != 0;
+    const sqr_t checker_sqr = in_check ? lsb(checkers) : 0;
+
+    const bb::U64 evasion_mask =
+        in_check ? checkers | bb::slider_between[checker_sqr][king_sqr] : 0;
+
+    LegalCtx ctx{
+        .pin_bb = pin_bb,
+        .king_sqr = king_sqr,
+        .checker_sqr = checker_sqr,
+        .evasion_mask = evasion_mask,
+        .in_check = in_check
+    };
+
+    gen_pawn_moves_bulk<gen_type>(pos, moves, ctx);
 
     bb::U64 occ = pos.bb.every_type()[color] & ~pos.bb.get(PieceType::pawn)[color];
     while (occ != 0) {
         sqr_t sqr = poplsb(occ);
 
         switch (pos.board[sqr].type) {
-        case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, pins); break;
-        case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, pins); break;
-        case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, pins); break;
-        case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, pins); break;
+        case PieceType::knight: gen_knight_moves<gen_type>(pos, sqr, moves, ctx); break;
+        case PieceType::bishop: gen_bishop_moves<gen_type>(pos, sqr, moves, ctx); break;
+        case PieceType::rook:   gen_rook_moves<gen_type>(pos, sqr, moves, ctx); break;
+        case PieceType::queen:  gen_queen_moves<gen_type>(pos, sqr, moves, ctx); break;
         case PieceType::king:   gen_king_moves<gen_type>(pos, sqr, moves); break;
         default:                break;
         }
@@ -390,5 +394,5 @@ template <chess::GenType gen_type> chess::MoveStack chess::gen_moves(Position &p
     return moves;
 }
 
-template chess::MoveStack chess::gen_moves<chess::GenType::legal>(Position &pos);
-template chess::MoveStack chess::gen_moves<chess::GenType::pseudo>(Position &pos);
+template chess::MoveStack<> chess::gen_moves<chess::GenType::legal>(Position &pos);
+template chess::MoveStack<> chess::gen_moves<chess::GenType::pseudo>(Position &pos);

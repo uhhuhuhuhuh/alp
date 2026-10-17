@@ -84,10 +84,9 @@ struct Move {
 
 constexpr Move NO_MOVE = Move{-1, -1, MoveFlag::quiet, PieceType::none};
 
-class MoveStack {
+template <std::size_t cap = 256> class MoveStack {
   private:
-    constexpr static std::size_t fixed_cap = 256;
-    Move data[fixed_cap];
+    Move data[cap];
     std::size_t len = 0;
 
   public:
@@ -123,7 +122,7 @@ class MoveStack {
     constexpr bool is_empty() const { return len == 0; }
 
     void push(const Move &move) {
-        assert(len < fixed_cap);
+        assert(len < cap);
         data[len] = move;
         len++;
     }
@@ -131,7 +130,7 @@ class MoveStack {
         sqr_t from = -1, sqr_t to = -1, uint8_t flag = MoveFlag::quiet,
         PieceType promotion = PieceType::none
     ) {
-        assert(len < fixed_cap);
+        assert(len < cap);
         data[len].from = from;
         data[len].to = to;
         data[len].flag = flag;

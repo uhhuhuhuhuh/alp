@@ -20,7 +20,7 @@ chess::Position::FenParseErr chess::LazyEngine::parse_fen(std::string_view fen) 
 chess::Position &chess::LazyEngine::position() { return pos; }
 const chess::Position &chess::LazyEngine::position() const { return pos; }
 
-const chess::MoveStack &chess::LazyEngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::LazyEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -417,7 +417,7 @@ static int move_history_index(const Move &move) {
 } // namespace chess
 
 chess::LazyEngine::MovePicker::MovePicker(
-    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, int ply, Color side,
+    const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move, int ply, Color side,
     const MoveHeuristics &heuristics
 )
     : m_pos(pos), m_side(side), m_heuristics(heuristics) {
@@ -507,7 +507,7 @@ bool chess::LazyEngine::MovePicker::next(Move &move) {
     return false;
 }
 
-bool chess::LazyEngine::MovePicker::contains(const MoveStack &moves, const Move &target) {
+bool chess::LazyEngine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
     if (target == Move{})
         return false;
 
@@ -739,7 +739,7 @@ int32_t chess::LazyEngine::negamax(
 }
 
 int32_t chess::LazyEngine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    chess::MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
 ) {
     int32_t alpha = -INF;
     int32_t beta = INF;

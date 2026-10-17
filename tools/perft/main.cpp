@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "fen_pos.hpp"
 
 #include <exception>
 #include <iostream>
@@ -10,11 +11,15 @@ int main(int argc, char **argv) {
     }
 
     chess::Engine engine;
-    auto err = engine.parse_fen(argv[1]);
-    if (err != chess::Position::FenParseErr::ok) {
-        std::cerr << "Can't parse FEN\n";
-        std::cerr << chess::Position::format_fen_err(err) << '\n';
-        return -1;
+    if (std::string(argv[1]) == "start") {
+        engine.parse_fen(chess::fen::starting_pos);
+    } else {
+        auto err = engine.parse_fen(argv[1]);
+        if (err != chess::Position::FenParseErr::ok) {
+            std::cerr << "Can't parse FEN\n";
+            std::cerr << chess::Position::format_fen_err(err) << '\n';
+            return -1;
+        }
     }
 
     uint8_t depth = 0;

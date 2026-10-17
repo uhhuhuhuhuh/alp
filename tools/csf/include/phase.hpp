@@ -34,21 +34,21 @@ class PhaseEngine : public IEngine {
   public:
     StateStack st_stack;
     Position pos;
-    MoveStack moves;
+    MoveStack<> moves;
     TransposTable<64> tt;
 
   private:
     Move get_tt_move(SearchContext &ctx);
     int32_t capture_score(const Move &move);
     int32_t move_score(const Move &move, const Move &pv_move, const Move &tt_move);
-    void order_moves(MoveStack &moves, const Move &pv_move, const Move &tt_move);
+    void order_moves(MoveStack<> &moves, const Move &pv_move, const Move &tt_move);
     void update_pv(SearchContext &ctx, uint16_t ply, const Move &move);
     int32_t quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int qply = 0);
     int32_t score_to_tt(int32_t score, uint16_t ply);
     int32_t score_from_tt(int32_t score, uint16_t ply);
     int32_t negamax(uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx);
     int32_t
-    root_search(chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move);
+    root_search(MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move);
 
   public:
     PhaseEngine();
@@ -61,7 +61,7 @@ class PhaseEngine : public IEngine {
     virtual Position &position() override;
     const Position &position() const override;
 
-    const MoveStack &gen_legal_moves() override;
+    const MoveStack<> &gen_legal_moves() override;
 
     void do_move(const Move &move) override;
     void undo_move(const Move &move) override;

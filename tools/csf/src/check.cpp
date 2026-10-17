@@ -20,7 +20,7 @@ chess::Position::FenParseErr chess::CheckEngine::parse_fen(std::string_view fen)
 chess::Position &chess::CheckEngine::position() { return pos; }
 const chess::Position &chess::CheckEngine::position() const { return pos; }
 
-const chess::MoveStack &chess::CheckEngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::CheckEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -417,7 +417,7 @@ static int move_history_index(const Move &move) {
 } // namespace chess
 
 chess::CheckEngine::MovePicker::MovePicker(
-    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, const Move &pv_move,
+    const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move, const Move &pv_move,
     int ply, Color side, const MoveHeuristics &heuristics
 )
     : m_pos(pos), m_side(side), m_heuristics(heuristics) {
@@ -521,7 +521,7 @@ bool chess::CheckEngine::MovePicker::next(Move &move) {
     return false;
 }
 
-bool chess::CheckEngine::MovePicker::contains(const MoveStack &moves, const Move &target) {
+bool chess::CheckEngine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
     if (target == Move{})
         return false;
 
@@ -774,7 +774,7 @@ int32_t chess::CheckEngine::negamax(
 }
 
 int32_t chess::CheckEngine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
 ) {
     int32_t alpha = -INF;
     int32_t beta = INF;

@@ -19,7 +19,7 @@ chess::Position::FenParseErr chess::RNGEngine::parse_fen(std::string_view fen) {
 chess::Position &chess::RNGEngine::position() { return pos; }
 const chess::Position &chess::RNGEngine::position() const { return pos; }
 
-const chess::MoveStack &chess::RNGEngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::RNGEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 

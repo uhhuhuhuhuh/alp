@@ -20,7 +20,7 @@ chess::Position::FenParseErr chess::StartingEngine::parse_fen(std::string_view f
 chess::Position &chess::StartingEngine::position() { return pos; }
 const chess::Position &chess::StartingEngine::position() const { return pos; }
 
-const chess::MoveStack &chess::StartingEngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::StartingEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -319,7 +319,7 @@ chess::StartingEngine::move_score(const Move &move, const Move &pv_move, const M
 }
 
 void chess::StartingEngine::order_moves(
-    MoveStack &moves, const Move &pv_move, const Move &tt_move
+    MoveStack<> &moves, const Move &pv_move, const Move &tt_move
 ) {
     std::stable_sort(moves.begin(), moves.end(), [&](const Move &a, const Move &b) {
         return move_score(a, pv_move, tt_move) > move_score(b, pv_move, tt_move);
@@ -511,7 +511,7 @@ int32_t chess::StartingEngine::negamax(
 }
 
 int32_t chess::StartingEngine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    chess::MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
 ) {
     int32_t alpha = -INF;
     int32_t beta = INF;

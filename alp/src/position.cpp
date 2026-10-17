@@ -7,7 +7,6 @@
 #include "square.hpp"
 #include "zobrist.hpp"
 
-#include <cmath>
 #include <format>
 #include <string>
 #include <unordered_map>
@@ -17,7 +16,7 @@ chess::Position::Position(std::string_view sv, State &st, FenParseErr &out_err) 
     out_err = parse_fen(sv, st);
 }
 
-chess::MoveStack chess::Position::gen_legal_moves() { return gen_moves<GenType::legal>(*this); }
+chess::MoveStack<> chess::Position::gen_legal_moves() { return gen_moves<GenType::legal>(*this); }
 
 std::string chess::format_game_end(GameEnd game_end) {
     std::unordered_map<GameEnd, std::string_view> map = {
@@ -375,7 +374,7 @@ std::string chess::Position::format_fen_err(FenParseErr err) {
                            : std::format("{}, Error code: {}", it->second, static_cast<int>(err));
 }
 
-chess::GameEnd chess::Position::get_game_end(const MoveStack &moves) const {
+chess::GameEnd chess::Position::get_game_end(const MoveStack<> &moves) const {
     if (moves.is_empty()) {
         if (st->checkers != 0) {
             return GameEnd::checkmate;
@@ -583,6 +582,22 @@ void chess::Position::undo_move(const Move &move) {
         bb.place(captured.type, captured.color, move.to);
     }
 
+    st = st->prev;
+    game_ply--;
+}
+
+void chess::Position::do_null_move(State &new_st) {
+    new_st = *st;
+    new_st.prev = st;
+    new_st.active_color = !new_st.active_color;
+    new_st.hash ^= zobrist::side();
+    new_st.ep_sqr = State::ep_none;
+    new_st.hash ^= zobrist::ep(st->ep_sqr);
+    st = &new_st;
+    game_ply++;
+}
+
+void chess::Position::undo_null_move() {
     st = st->prev;
     game_ply--;
 }

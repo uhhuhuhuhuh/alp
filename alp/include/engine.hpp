@@ -21,7 +21,7 @@ class IEngine {
     virtual Position &position() = 0;
     virtual const Position &position() const = 0;
 
-    virtual const MoveStack &gen_legal_moves() = 0;
+    virtual const MoveStack<> &gen_legal_moves() = 0;
 
     virtual void do_move(const Move &move) = 0;
     virtual void undo_move(const Move &move) = 0;
@@ -74,7 +74,7 @@ class Engine : public IEngine {
     class MovePicker {
       public:
         MovePicker(
-            const Position &pos, const MoveStack &legal_moves, const Move &tt_move,
+            const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move,
             const Move &pv_move, int ply, Color side, const MoveHeuristics &heuristics
         );
 
@@ -92,17 +92,17 @@ class Engine : public IEngine {
         bool m_has_pv_move = false;
         bool m_pv_move_pending = false;
 
-        std::vector<Move> m_good_captures;
-        std::vector<Move> m_killers;
-        std::vector<Move> m_quiets;
-        std::vector<Move> m_bad_captures;
+        MoveStack<64> m_good_captures;
+        MoveStack<64> m_killers;
+        MoveStack<64> m_quiets;
+        MoveStack<64> m_bad_captures;
 
         std::size_t m_good_index = 0;
         std::size_t m_killer_index = 0;
         std::size_t m_quiet_index = 0;
         std::size_t m_bad_index = 0;
 
-        bool contains(const MoveStack &moves, const Move &target);
+        bool contains(const MoveStack<> &moves, const Move &target);
 
         int capture_order_score(const Move &move) const;
 
@@ -112,7 +112,7 @@ class Engine : public IEngine {
   public:
     StateStack st_stack;
     Position pos;
-    MoveStack moves;
+    MoveStack<> moves;
     TransposTable<64> tt;
 
   private:
@@ -120,15 +120,18 @@ class Engine : public IEngine {
     Move get_tt_move(SearchContext &ctx);
     int32_t capture_score(const Move &move);
     int32_t move_score(const Move &move, const Move &pv_move, const Move &tt_move);
-    void order_moves(MoveStack &moves, const Move &pv_move, const Move &tt_move);
+    void order_moves(MoveStack<> &moves, const Move &pv_move, const Move &tt_move);
     void update_pv(SearchContext &ctx, uint16_t ply, const Move &move);
     int32_t quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply = 0);
     int32_t score_to_tt(int32_t score, uint16_t ply);
     int32_t score_from_tt(int32_t score, uint16_t ply);
-    int32_t negamax(uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx);
+    int32_t negamax(
+        uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx,
+        bool prev_move_was_null
+    );
     int32_t root_search(
-        chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha,
-        int32_t beta, Move &best_move
+        MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha, int32_t beta,
+        Move &best_move
     );
 
   public:
@@ -142,7 +145,7 @@ class Engine : public IEngine {
     virtual Position &position() override;
     const Position &position() const override;
 
-    const MoveStack &gen_legal_moves() override;
+    const MoveStack<> &gen_legal_moves() override;
 
     void do_move(const Move &move) override;
     void undo_move(const Move &move) override;

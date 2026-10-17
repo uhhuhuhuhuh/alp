@@ -8,7 +8,7 @@ class RNGEngine : public IEngine {
   public:
     StateStack st_stack;
     Position pos;
-    MoveStack moves;
+    MoveStack<> moves;
 
   public:
     RNGEngine();
@@ -20,7 +20,7 @@ class RNGEngine : public IEngine {
     Position &position() override;
     const Position &position() const override;
 
-    const MoveStack &gen_legal_moves() override;
+    const MoveStack<> &gen_legal_moves() override;
 
     void do_move(const Move &move) override;
     void undo_move(const Move &move) override;

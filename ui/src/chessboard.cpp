@@ -184,7 +184,7 @@ void ChessBoard::clear_selection() {
 }
 
 ChessBoard::ChessBoard(
-    wxWindow *parent, chess::Position &pos, chess::MoveStack &moves, do_move_func_t do_move
+    wxWindow *parent, chess::Position &pos, chess::MoveStack<> &moves, do_move_func_t do_move
 )
     : wxPanel(parent), m_pos(pos), m_moves(moves), m_do_move_func(do_move), m_selected() {
     Bind(wxEVT_PAINT, &ChessBoard::OnPaint, this);

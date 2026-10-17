@@ -20,7 +20,7 @@ chess::Position::FenParseErr chess::LMREngine::parse_fen(std::string_view fen) {
 chess::Position &chess::LMREngine::position() { return pos; }
 const chess::Position &chess::LMREngine::position() const { return pos; }
 
-const chess::MoveStack &chess::LMREngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::LMREngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -443,7 +443,7 @@ static int lmr_reduction(int depth, int move_index) {
 } // namespace chess
 
 chess::LMREngine::MovePicker::MovePicker(
-    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, const Move &pv_move,
+    const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move, const Move &pv_move,
     int ply, Color side, const MoveHeuristics &heuristics
 )
     : m_pos(pos), m_side(side), m_heuristics(heuristics) {
@@ -547,7 +547,7 @@ bool chess::LMREngine::MovePicker::next(Move &move) {
     return false;
 }
 
-bool chess::LMREngine::MovePicker::contains(const MoveStack &moves, const Move &target) {
+bool chess::LMREngine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
     if (target == NO_MOVE)
         return false;
 
@@ -798,7 +798,7 @@ int32_t chess::LMREngine::negamax(
 }
 
 int32_t chess::LMREngine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    chess::MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
 ) {
     int32_t alpha = -INF;
     int32_t beta = INF;

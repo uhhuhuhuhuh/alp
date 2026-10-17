@@ -68,7 +68,17 @@ if(ALP_BUILD_CSF OR ALP_BUILD_ALL)
     add_subdirectory(tools/csf)
 endif()
 
-option(ALP_BUILD_PERFT "Build the PERFT tool" OFF)
+option(ALP_BUILD_PERFT "Build the Perft tool" OFF)
 if(ALP_BUILD_PERFT OR ALP_BUILD_ALL)
     add_subdirectory(tools/perft)
+endif()
+
+option(ALP_BUILD_SEARCH "Build the Search tool" OFF)
+if(ALP_BUILD_SEARCH OR ALP_BUILD_ALL)
+    add_subdirectory(tools/search)
+endif()
+
+option(ALP_BUILD_GEN_ATK "Build the gen atk tool" OFF)
+if(ALP_BUILD_GEN_ATK OR ALP_BUILD_ALL)
+    add_subdirectory(tools/gen_atk)
 endif()

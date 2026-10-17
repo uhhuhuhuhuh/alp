@@ -38,7 +38,7 @@ class ChessBoard : public wxPanel {
 
   private:
     chess::Position &m_pos;
-    chess::MoveStack &m_moves;
+    chess::MoveStack<> &m_moves;
     do_move_func_t m_do_move_func;
 
     static inline bool s_has_set_pieces = false;
@@ -53,6 +53,6 @@ class ChessBoard : public wxPanel {
     void clear_selection();
 
     ChessBoard(
-        wxWindow *parent, chess::Position &pos, chess::MoveStack &moves, do_move_func_t do_move
+        wxWindow *parent, chess::Position &pos, chess::MoveStack<> &moves, do_move_func_t do_move
     );
 };

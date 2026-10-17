@@ -58,7 +58,7 @@ class Position {
     };
 
   private:
-    MoveStack gen_legal_moves();
+    MoveStack<> gen_legal_moves();
 
     template <bool root, typename output_fn>
     uint64_t perft_recursive(uint8_t depth, output_fn output) {
@@ -121,12 +121,17 @@ class Position {
 
     static std::string format_fen_err(FenParseErr err);
 
-    GameEnd get_game_end(const MoveStack &moves) const;
+    GameEnd get_game_end(const MoveStack<> &moves) const;
 
     // makes a move and flips the active side
     void do_move(const Move &move, State &new_st);
     // undoes a move and flips the active side
     void undo_move(const Move &move);
+
+    // makes a move and flips the active side
+    void do_null_move(State &new_st);
+    // undoes a move and flips the active side
+    void undo_null_move();
 
     template <typename output_fn>
     PerftResults perft(uint8_t depth, output_fn output, std::stop_token stop_token) {

@@ -20,7 +20,7 @@ chess::Position::FenParseErr chess::PhaseEngine::parse_fen(std::string_view fen)
 chess::Position &chess::PhaseEngine::position() { return pos; }
 const chess::Position &chess::PhaseEngine::position() const { return pos; }
 
-const chess::MoveStack &chess::PhaseEngine::gen_legal_moves() {
+const chess::MoveStack<> &chess::PhaseEngine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -427,7 +427,7 @@ int32_t chess::PhaseEngine::move_score(const Move &move, const Move &pv_move, co
     return 0;
 }
 
-void chess::PhaseEngine::order_moves(MoveStack &moves, const Move &pv_move, const Move &tt_move) {
+void chess::PhaseEngine::order_moves(MoveStack<> &moves, const Move &pv_move, const Move &tt_move) {
     std::stable_sort(moves.begin(), moves.end(), [&](const Move &a, const Move &b) {
         return move_score(a, pv_move, tt_move) > move_score(b, pv_move, tt_move);
     });
@@ -617,7 +617,7 @@ int32_t chess::PhaseEngine::negamax(
 }
 
 int32_t chess::PhaseEngine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
+    chess::MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, Move &best_move
 ) {
     int32_t alpha = -INF;
     int32_t beta = INF;

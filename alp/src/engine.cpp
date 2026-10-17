@@ -21,7 +21,7 @@ chess::Position::FenParseErr chess::Engine::parse_fen(std::string_view fen) {
 chess::Position &chess::Engine::position() { return pos; }
 const chess::Position &chess::Engine::position() const { return pos; }
 
-const chess::MoveStack &chess::Engine::gen_legal_moves() {
+const chess::MoveStack<> &chess::Engine::gen_legal_moves() {
     return moves = gen_moves<GenType::legal>(pos);
 }
 
@@ -567,7 +567,8 @@ static int static_exchange_eval(const Position &pos, const Move &move) {
                 break;
         }
 
-        gain[++depth] = move_piece_value(occupant) + promotion_bonus - gain[depth - 1];
+        ++depth;
+        gain[depth] = move_piece_value(occupant) + promotion_bonus - gain[depth - 1];
 
         state.get(occupant, !side) &= ~target_bb;
         state.get(attacker_type, side) &= ~attacker_bb;
@@ -593,7 +594,7 @@ static int static_exchange_eval(const Position &pos, const Move &move) {
 } // namespace chess
 
 chess::Engine::MovePicker::MovePicker(
-    const Position &pos, const MoveStack &legal_moves, const Move &tt_move, const Move &pv_move,
+    const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move, const Move &pv_move,
     int ply, Color side, const MoveHeuristics &heuristics
 )
     : m_pos(pos), m_side(side), m_heuristics(heuristics), m_quiet_index(0) {
@@ -616,20 +617,20 @@ chess::Engine::MovePicker::MovePicker(
             continue;
 
         if (move.promotion_type != PieceType::none) {
-            m_good_captures.push_back(move);
+            m_good_captures.push(move);
             continue;
         }
 
         if (move.promotion_type != PieceType::none && !is_capture(move)) {
-            m_good_captures.push_back(move);
+            m_good_captures.push(move);
             continue;
         }
 
         if (is_capture(move)) {
             if (capture_order_score(move) >= 0)
-                m_good_captures.push_back(move);
+                m_good_captures.push(move);
             else
-                m_bad_captures.push_back(move);
+                m_bad_captures.push(move);
             continue;
         }
 
@@ -638,7 +639,7 @@ chess::Engine::MovePicker::MovePicker(
         if (ply >= 0 && ply < Engine::MAX_KILLER_PLY && is_quiet(move)) {
             for (const Move &killer : m_heuristics.killers[ply]) {
                 if (killer == move) {
-                    m_killers.push_back(move);
+                    m_killers.push(move);
                     is_killer = true;
                     break;
                 }
@@ -646,11 +647,17 @@ chess::Engine::MovePicker::MovePicker(
         }
 
         if (!is_killer)
-            m_quiets.push_back(move);
+            m_quiets.push(move);
     }
 
     std::sort(m_good_captures.begin(), m_good_captures.end(), [&](const Move &a, const Move &b) {
         return tactical_score(a) > tactical_score(b);
+    });
+
+    const int ci = color_index(m_side);
+    std::sort(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
+        return m_heuristics.history[ci][move_history_index(a)] >
+               m_heuristics.history[ci][move_history_index(b)];
     });
 
     std::sort(m_bad_captures.begin(), m_bad_captures.end(), [&](const Move &a, const Move &b) {
@@ -681,16 +688,9 @@ bool chess::Engine::MovePicker::next(Move &move) {
         return true;
     }
 
-    if (!m_quiets.empty()) {
-        const int ci = color_index(m_side);
-        std::sort(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
-            return m_heuristics.history[ci][move_history_index(a)] >
-                   m_heuristics.history[ci][move_history_index(b)];
-        });
-        if (m_quiet_index < m_quiets.size()) {
-            move = m_quiets[m_quiet_index++];
-            return true;
-        }
+    if (!m_quiets.is_empty() && m_quiet_index < m_quiets.size()) {
+        move = m_quiets[m_quiet_index++];
+        return true;
     }
 
     if (m_bad_index < m_bad_captures.size()) {
@@ -701,7 +701,7 @@ bool chess::Engine::MovePicker::next(Move &move) {
     return false;
 }
 
-bool chess::Engine::MovePicker::contains(const MoveStack &moves, const Move &target) {
+bool chess::Engine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
     if (target == NO_MOVE)
         return false;
 
@@ -745,6 +745,8 @@ chess::Engine::quiescence(int32_t alpha, int32_t beta, SearchContext &ctx, int p
 
     const bool in_check = pos.st->checkers != 0;
 
+    assert(popcount(pos.bb.get(PieceType::king)[Color::white]) == 1);
+    assert(popcount(pos.bb.get(PieceType::king)[Color::black]) == 1);
     auto moves = gen_moves<GenType::legal>(pos);
 
     const GameEnd end = pos.get_game_end(moves);
@@ -807,7 +809,8 @@ int32_t chess::Engine::score_from_tt(int32_t score, uint16_t ply) {
 }
 
 int32_t chess::Engine::negamax(
-    uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx
+    uint8_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx,
+    bool prev_move_was_null
 ) {
     ctx.pv_length[ply] = 0;
 
@@ -822,6 +825,17 @@ int32_t chess::Engine::negamax(
     case GameEnd::proceed:   break;
     case GameEnd::checkmate: return -MATE_SCORE + ply;
     default:                 return 0;
+    }
+
+    if (!prev_move_was_null && depth >= 3 && pos.st->checkers == 0 &&
+        pos.bb.get(PieceType::pawn)[pos.st->active_color] !=
+            0 /* TODO: zugzwang can still occur */) {
+        State st;
+        pos.do_null_move(st);
+        int32_t score = -negamax(depth - 3, ply + 1, -beta, -beta + 1, ctx, true);
+        pos.undo_null_move();
+        if (score >= beta)
+            return score;
     }
 
     const int32_t original_alpha = alpha;
@@ -873,18 +887,19 @@ int32_t chess::Engine::negamax(
         pos.do_move(move, st);
 
         int32_t score;
-
         if (move_index == 1) {
-            score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+            score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx, prev_move_was_null);
         } else {
             const int reduction =
                 !in_check && is_quiet(move) ? lmr_reduction(depth, move_index) : 0;
-            score = -negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, ctx);
+            score = -negamax(
+                depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, ctx, prev_move_was_null
+            );
             if (reduction > 0 && score > alpha) {
-                score = -negamax(depth - 1, ply + 1, -alpha - 1, -alpha, ctx);
+                score = -negamax(depth - 1, ply + 1, -alpha - 1, -alpha, ctx, prev_move_was_null);
             }
             if (score > alpha && score < beta) {
-                score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx);
+                score = -negamax(depth - 1, ply + 1, -beta, -alpha, ctx, prev_move_was_null);
             }
         }
 
@@ -948,7 +963,7 @@ int32_t chess::Engine::negamax(
 }
 
 int32_t chess::Engine::root_search(
-    chess::MoveStack &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha, int32_t beta,
+    MoveStack<> &root_moves, uint8_t depth, SearchContext &ctx, int32_t alpha, int32_t beta,
     Move &best_move
 ) {
     int32_t best_score = -INF;
@@ -971,7 +986,7 @@ int32_t chess::Engine::root_search(
 
         State st;
         pos.do_move(move, st);
-        const int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx);
+        const int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx, false);
         pos.undo_move(move);
 
         if (ctx.stopped)
