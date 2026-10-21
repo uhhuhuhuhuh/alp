@@ -399,7 +399,7 @@ chess::Move chess::LMREngine::get_tt_move(SearchContext &ctx) {
             return entry->best_move;
     }
 
-    return NO_MOVE;
+    return Move::none();
 }
 
 namespace chess {
@@ -548,7 +548,7 @@ bool chess::LMREngine::MovePicker::next(Move &move) {
 }
 
 bool chess::LMREngine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
-    if (target == NO_MOVE)
+    if (target == Move::none())
         return false;
 
     return std::find(moves.begin(), moves.end(), target) != moves.end();
@@ -678,7 +678,7 @@ int32_t chess::LMREngine::negamax(
     const int32_t original_beta = beta;
 
     auto *entry = ctx.tt.probe(pos.st->hash);
-    Move tt_move = NO_MOVE;
+    Move tt_move = Move::none();
 
     if (entry != nullptr && entry->key == pos.st->hash) {
         tt_move = entry->best_move;
@@ -702,7 +702,7 @@ int32_t chess::LMREngine::negamax(
         }
     }
 
-    Move pv_move = NO_MOVE;
+    Move pv_move = Move::none();
 
     if (ply < ctx.prev_pv_length)
         pv_move = ctx.prev_pv[ply];
@@ -712,7 +712,7 @@ int32_t chess::LMREngine::negamax(
     MovePicker picker(pos, moves, tt_move, pv_move, ply, pos.st->active_color, ctx.heuristics);
 
     int32_t best = -INF;
-    Move best_move = NO_MOVE;
+    Move best_move = Move::none();
     int move_index = 0;
 
     Move move;
@@ -804,8 +804,8 @@ int32_t chess::LMREngine::root_search(
     int32_t beta = INF;
     int32_t best_score = -INF;
 
-    Move iteration_best = NO_MOVE;
-    Move pv_move = NO_MOVE;
+    Move iteration_best = Move::none();
+    Move pv_move = Move::none();
 
     if (ctx.prev_pv_length > 0)
         pv_move = ctx.prev_pv[0];

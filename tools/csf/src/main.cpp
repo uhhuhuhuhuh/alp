@@ -9,8 +9,10 @@
 #include "engine.hpp"
 #include "lazy.hpp"
 #include "lmr.hpp"
+#include "null.hpp"
 #include "phase.hpp"
 #include "rng.hpp"
+#include "see.hpp"
 #include "starting.hpp"
 
 #include <atomic>
@@ -23,7 +25,7 @@
 #include <thread>
 #include <unordered_map>
 
-enum class EngineID { NONE, CURR, RNG, STARTING, PHASE, LAZY, CHECK, LMR };
+enum class EngineID { NONE, CURR, RNG, STARTING, PHASE, LAZY, CHECK, LMR, SEE, NULL_MOVE };
 
 struct EnginePtr {
     std::unique_ptr<chess::IEngine> ptr;
@@ -35,14 +37,16 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     EnginePtr engine_ptr{.id = id, .is_player_one = is_player_one};
 
     switch (id) {
-    case EngineID::NONE:     break;
-    case EngineID::RNG:      engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
-    case EngineID::CURR:     engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
-    case EngineID::STARTING: engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
-    case EngineID::PHASE:    engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
-    case EngineID::LAZY:     engine_ptr.ptr = std::make_unique<chess::LazyEngine>(); break;
-    case EngineID::CHECK:    engine_ptr.ptr = std::make_unique<chess::CheckEngine>(); break;
-    case EngineID::LMR:      engine_ptr.ptr = std::make_unique<chess::LMREngine>(); break;
+    case EngineID::NONE:      break;
+    case EngineID::RNG:       engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
+    case EngineID::CURR:      engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
+    case EngineID::STARTING:  engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
+    case EngineID::PHASE:     engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
+    case EngineID::LAZY:      engine_ptr.ptr = std::make_unique<chess::LazyEngine>(); break;
+    case EngineID::CHECK:     engine_ptr.ptr = std::make_unique<chess::CheckEngine>(); break;
+    case EngineID::LMR:       engine_ptr.ptr = std::make_unique<chess::LMREngine>(); break;
+    case EngineID::SEE:       engine_ptr.ptr = std::make_unique<chess::SEEEngine>(); break;
+    case EngineID::NULL_MOVE: engine_ptr.ptr = std::make_unique<chess::NullEngine>(); break;
     }
 
     return engine_ptr;
@@ -57,13 +61,15 @@ EngineID get_engine_id(std::string_view sv) {
                   return !std::isspace(ch);
               }));
     std::unordered_map<std::string_view, EngineID> map = {
-        {"curr",  EngineID::CURR    },
-        {"rng",   EngineID::RNG     },
-        {"start", EngineID::STARTING},
-        {"phase", EngineID::PHASE   },
-        {"lazy",  EngineID::LAZY    },
-        {"check", EngineID::CHECK   },
-        {"lmr",   EngineID::LMR     },
+        {"curr",  EngineID::CURR     },
+        {"rng",   EngineID::RNG      },
+        {"start", EngineID::STARTING },
+        {"phase", EngineID::PHASE    },
+        {"lazy",  EngineID::LAZY     },
+        {"check", EngineID::CHECK    },
+        {"lmr",   EngineID::LMR      },
+        {"see",   EngineID::SEE      },
+        {"null",  EngineID::NULL_MOVE},
     };
     auto it = map.find(str);
     if (it == map.end())
@@ -148,7 +154,13 @@ int main(int argc, char **argv) {
                   << "Engines:\n"
                   << "    - rng\n"
                   << "    - curr\n"
-                  << "    - start\n";
+                  << "    - start\n"
+                  << "    - phase\n"
+                  << "    - lazy\n"
+                  << "    - check\n"
+                  << "    - lmr\n"
+                  << "    - see\n"
+                  << "    - null\n";
 
         return 0;
     }
@@ -157,17 +169,14 @@ int main(int argc, char **argv) {
     const EngineID id2 = get_engine_id(argv[2]);
 
     bool invalid_id = false;
-
     if (id1 == EngineID::NONE) {
         std::cerr << "Invalid engine (first engine): " << argv[1] << '\n';
         invalid_id = true;
     }
-
     if (id2 == EngineID::NONE) {
         std::cerr << "Invalid engine (second engine): " << argv[2] << '\n';
         invalid_id = true;
     }
-
     if (invalid_id)
         return 1;
 

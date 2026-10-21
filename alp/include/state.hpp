@@ -119,5 +119,11 @@ class StateStack {
         assert(m_len > 0);
         m_len--;
     }
+
+    void clear() { m_len = 0; }
+    void resize(std::size_t size) {
+        assert(size <= m_len);
+        m_len = size;
+    }
 };
 } // namespace chess

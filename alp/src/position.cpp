@@ -213,7 +213,7 @@ handle_fen_non_board(OnNonBoard on, Position &pos, const std::string &str) {
         if (pos.st->active_color == Color::black) {
             pos.game_ply++;
         }
-        if (pos.game_ply == 0xFFFF || pos.game_ply < pos.st->halfmove_clock) {
+        if (pos.game_ply == pos.invalid_game_ply || pos.game_ply < pos.st->halfmove_clock) {
             return Position::FenParseErr::bad_curr_move;
         }
         break;
@@ -304,7 +304,7 @@ chess::Position::FenParseErr chess::Position::parse_fen(std::string_view sv, Sta
         return FenParseErr::bad_king_count;
     }
 
-    pos.game_ply = 0xFFFF;
+    pos.game_ply = pos.invalid_game_ply;
 
     std::string not_board = static_cast<std::string>(sv).substr(board_end_idx + 1);
     OnNonBoard on = OnNonBoard::active_color;
@@ -338,7 +338,7 @@ chess::Position::FenParseErr chess::Position::parse_fen(std::string_view sv, Sta
         slice_start = -1;
     }
 
-    const bool has_set_game_ply = pos.game_ply != 0xFFFF;
+    const bool has_set_game_ply = pos.game_ply != pos.invalid_game_ply;
     if (static_cast<int>(on) < static_cast<int>(OnNonBoard::move_count) || !has_set_game_ply) {
         return FenParseErr::too_few_properties;
     }

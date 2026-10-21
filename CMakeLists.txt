@@ -82,3 +82,8 @@ option(ALP_BUILD_GEN_ATK "Build the gen atk tool" OFF)
 if(ALP_BUILD_GEN_ATK OR ALP_BUILD_ALL)
     add_subdirectory(tools/gen_atk)
 endif()
+
+option(ALP_BUILD_TEXEL_TUNER "Build the Texel Tuner tool" OFF)
+if(ALP_BUILD_TEXEL_TUNER OR ALP_BUILD_ALL)
+    add_subdirectory(tools/texel_tuner)
+endif()

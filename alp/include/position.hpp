@@ -25,7 +25,8 @@ std::string format_game_end(GameEnd game_end);
 // a class which holds all the important data used in a game of chess.
 class Position {
   public:
-    uint16_t game_ply = -1;
+    static constexpr uint16_t invalid_game_ply = std::numeric_limits<uint16_t>().max();
+    uint16_t game_ply = invalid_game_ply;
     std::array<Piece, 64> board;
     bb::PieceBB bb;
 

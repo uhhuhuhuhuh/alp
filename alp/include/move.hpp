@@ -29,8 +29,10 @@ struct Move {
         : from(from_), to(to_), flag(MoveFlag::quiet), promotion_type(PieceType::none) {};
     constexpr Move(sqr_t from_, sqr_t to_, uint8_t flag_)
         : from(from_), to(to_), flag(flag_), promotion_type(PieceType::none) {};
-    constexpr Move(sqr_t from_, sqr_t to_, uint8_t flag_, PieceType type)
-        : from(from_), to(to_), flag(flag_), promotion_type(type) {};
+    constexpr Move(sqr_t from_, sqr_t to_, uint8_t flag_, PieceType promotion_type_)
+        : from(from_), to(to_), flag(flag_), promotion_type(promotion_type_) {};
+
+    static constexpr Move none() { return Move{-1, -1, MoveFlag::quiet, PieceType::none}; };
 
     bool operator==(const chess::Move &other) const {
         return from == other.from && to == other.to && flag == other.flag &&
@@ -81,8 +83,6 @@ struct Move {
         return formated += Piece(promotion_type, Color::black).format();
     };
 };
-
-constexpr Move NO_MOVE = Move{-1, -1, MoveFlag::quiet, PieceType::none};
 
 template <std::size_t cap = 256> class MoveStack {
   private:

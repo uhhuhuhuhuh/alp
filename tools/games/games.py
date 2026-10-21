@@ -1,13 +1,24 @@
 """
-Run games against Stockfish using multiple concurrent workers.
+Generate Texel tuning data by playing games against Stockfish.
+
+Output format:
+FEN<TAB>score
+
+0.0 = Black wins
+0.5 = Draw
+1.0 = White wins
 """
 
 import subprocess
 import sys
 import random
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+OUTPUT_FILE = "texel.tsv"
+output_lock = threading.Lock()
 
 
 class Worker:
@@ -16,6 +27,7 @@ class Worker:
         self.is_helper_white = False
         self.fen = START_FEN
         self.start_fen = START_FEN
+        self.positions = []
 
         self.helper = None
         self.stockfish = None
@@ -25,6 +37,7 @@ class Worker:
                 [helper_path],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
             )
@@ -33,6 +46,7 @@ class Worker:
                 ["stockfish"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
             )
@@ -72,13 +86,7 @@ class Worker:
         while self._readline(self.stockfish) != "uciok":
             pass
 
-        # Give each Stockfish process one search thread so that
-        # concurrent games do not oversubscribe the CPU as easily.
-        self._write(
-            self.stockfish,
-            "setoption name Threads value 1",
-        )
-
+        self._write(self.stockfish, "setoption name Threads value 1")
         self._write(self.stockfish, "isready")
 
         while self._readline(self.stockfish) != "readyok":
@@ -98,10 +106,7 @@ class Worker:
 
     def run_stockfish(self, fen: str) -> str:
         self._write(self.stockfish, f"position fen {fen}")
-        self._write(
-            self.stockfish,
-            f"go movetime {self.time_ms}",
-        )
+        self._write(self.stockfish, f"go movetime {self.time_ms}")
 
         while True:
             line = self._readline(self.stockfish)
@@ -109,45 +114,45 @@ class Worker:
             if line.startswith("bestmove "):
                 parts = line.split()
 
-                if len(parts) < 2:
-                    raise RuntimeError(f"Invalid Stockfish response: {line}")
+                if len(parts) < 2 or parts[1] == "(none)":
+                    raise RuntimeError(f"Invalid Stockfish bestmove: {line}")
 
                 return parts[1]
 
-    def play_game(self) -> str:
+    def play_game(self):
         self.is_helper_white = random.choice([True, False])
-
         self.fen = self.set_position()
         self.start_fen = self.fen
-
-        # The active side is the side-to-move field in the FEN.
-        fields = self.fen.split()
-
-        if len(fields) < 2 or fields[1] not in ("w", "b"):
-            raise RuntimeError(f"Invalid starting FEN: {self.fen}")
-
-        is_white = fields[1] == "w"
+        self.positions = []
 
         while True:
+            self.positions.append(self.run_helper("f"))
+
             end = self.run_helper("e")
 
             if end != "ok":
                 if end == "mate":
-                    # The side to move has been checkmated.
-                    return "stockfish" if self.is_helper_white == is_white else "helper"
+                    # Side to move is checkmated; the other side won.
+                    winner_is_white = self.fen.split()[1] == "b"
+                    return 1.0 if winner_is_white else 0.0
 
-                return "draw"
+                return 0.5
 
-            if is_white == self.is_helper_white:
+            fields = self.fen.split()
+
+            if len(fields) < 2 or fields[1] not in ("w", "b"):
+                raise RuntimeError(f"Invalid FEN: {self.fen}")
+
+            is_white_to_move = fields[1] == "w"
+
+            if is_white_to_move == self.is_helper_white:
                 move = self.run_helper(str(self.time_ms))
             else:
                 move = self.run_stockfish(self.fen)
 
             self.fen = self.run_helper(move)
-            is_white = not is_white
 
     def close(self):
-        # Close both child processes, including when initialization fails.
         for process in (self.helper, self.stockfish):
             if process is None:
                 continue
@@ -172,7 +177,6 @@ class Worker:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-
             finally:
                 self._close_pipes(process)
 
@@ -187,19 +191,19 @@ class Worker:
 
 
 def run_game(index: int, helper_path: str, time_ms: int):
-    """Run one independent game and return its result and metadata."""
     worker = Worker(helper_path, time_ms)
 
     try:
-        result = worker.play_game()
+        score = worker.play_game()
 
-        return (
-            index,
-            result,
-            worker.start_fen,
-            worker.fen,
-            worker.is_helper_white,
-        )
+        # Each game is written as one batch to avoid interleaved output.
+        with output_lock:
+            with open(OUTPUT_FILE, "a", encoding="utf-8") as output:
+                for fen in worker.positions:
+                    output.write(f"{fen}\t{score:g}\n")
+
+        return index, score, len(worker.positions)
+
     finally:
         worker.close()
 
@@ -216,83 +220,47 @@ def main():
         time_ms = int(sys.argv[3])
         max_workers = int(sys.argv[4]) if len(sys.argv) == 5 else min(game_count, 4)
     except ValueError:
-        print(
-            "game_count, time_ms, and workers must be integers.",
-            file=sys.stderr,
-        )
+        print("game_count, time_ms, and workers must be integers.", file=sys.stderr)
         sys.exit(1)
 
-    if game_count < 1:
-        print("game_count must be positive.", file=sys.stderr)
-        sys.exit(1)
-
-    if time_ms < 1:
-        print("time_ms must be positive.", file=sys.stderr)
-        sys.exit(1)
-
-    if max_workers < 1:
-        print("workers must be positive.", file=sys.stderr)
+    if game_count < 1 or time_ms < 1 or max_workers < 1:
+        print("All arguments must be positive integers.", file=sys.stderr)
         sys.exit(1)
 
     max_workers = min(max_workers, game_count)
-
     helper_path = f"{build_dir}/tools/games/games_helper"
 
-    helper_wins = 0
-    stockfish_wins = 0
-    draws = 0
-    failures = 0
+    with open(OUTPUT_FILE, "w", encoding="utf-8"):
+        pass
 
-    print(f"Running {game_count} games with " f"{max_workers} concurrent workers.")
+    print(f"Running {game_count} games with {max_workers} workers.")
+    print(f"Writing Texel data to {OUTPUT_FILE}")
+
+    completed = 0
+    failures = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(
-                run_game,
-                i + 1,
-                helper_path,
-                time_ms,
-            )
+            executor.submit(run_game, i + 1, helper_path, time_ms)
             for i in range(game_count)
         ]
 
         for future in as_completed(futures):
             try:
-                (
-                    index,
-                    result,
-                    start_fen,
-                    end_fen,
-                    helper_white,
-                ) = future.result()
-
+                index, score, positions = future.result()
+                completed += 1
+                print(
+                    f"Game {index}/{game_count}: "
+                    f"score={score:g}, positions={positions}"
+                )
             except Exception as exc:
                 failures += 1
-                print(
-                    f"Game failed: {exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                continue
-
-            if result == "helper":
-                helper_wins += 1
-            elif result == "stockfish":
-                stockfish_wins += 1
-            else:
-                draws += 1
-
-            print(f"Game {index}/{game_count}: {result}")
-            print(f"    Starting FEN: {start_fen}")
-            print(f"    End FEN:      {end_fen}")
-            print(f"    Alp: {'white' if helper_white else 'black'}")
+                print(f"Game failed: {exc}", file=sys.stderr, flush=True)
 
     print("\nResults")
-    print(f"Helper wins:    {helper_wins}")
-    print(f"Stockfish wins: {stockfish_wins}")
-    print(f"Draws:          {draws}")
-    print(f"Failures:       {failures}")
-    print(f"Completed:      {game_count - failures}/{game_count}")
+    print(f"Completed: {completed}/{game_count}")
+    print(f"Failures:  {failures}")
+    print(f"Dataset:   {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
