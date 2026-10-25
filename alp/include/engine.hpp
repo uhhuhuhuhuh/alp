@@ -37,14 +37,20 @@ class Engine : public IEngine {
         static constexpr int32_t king_val = 20'000;
         int32_t queen_val = 700;
         int32_t rook_val = 350;
-        int32_t bishop_val = 200;
-        int32_t knight_val = 200;
+        int32_t bishop_val = 191;
+        int32_t knight_val = 185;
         static constexpr int32_t pawn_val = 100;
 
-        int32_t blocked_penalty = 36;
-        int32_t doubled_penalty = 60;
-        int32_t isolated_penalty = 0;
-        int32_t backward_penalty = 4;
+        int32_t blocked_penalty = 11;
+        int32_t doubled_penalty = 16;
+        int32_t isolated_penalty = 8;
+        int32_t backward_penalty = 28;
+        int32_t passed_val = 0;
+
+        // indexed based off of pawn count
+        std::array<int32_t, 9> rook_adj = {34, 49, 37, 27, 1, -17, -40, -46, -50};
+        // indexed based off of pawn count
+        std::array<int32_t, 9> knight_adj = {-22, 36, 33, 5, 0, -12, -15, -26, -46};
     };
     static constexpr EvalSettings get_default_eval_settings() { return EvalSettings{}; }
 
@@ -74,8 +80,6 @@ class Engine : public IEngine {
     struct SearchContext {
         Clock::time_point deadline;
         bool stopped = false;
-
-        chess::TransposTable<64> &tt;
 
         std::array<std::array<chess::Move, SearchSettings::max_ply>, SearchSettings::max_ply> pv{};
         std::array<int, SearchSettings::max_ply> pv_length{};

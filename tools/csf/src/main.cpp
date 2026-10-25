@@ -10,10 +10,12 @@
 #include "lazy.hpp"
 #include "lmr.hpp"
 #include "null.hpp"
+#include "passed.hpp"
 #include "phase.hpp"
 #include "rng.hpp"
 #include "see.hpp"
 #include "starting.hpp"
+#include "tune.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -25,7 +27,20 @@
 #include <thread>
 #include <unordered_map>
 
-enum class EngineID { NONE, CURR, RNG, STARTING, PHASE, LAZY, CHECK, LMR, SEE, NULL_MOVE };
+enum class EngineID {
+    NONE,
+    CURR,
+    RNG,
+    STARTING,
+    PHASE,
+    LAZY,
+    CHECK,
+    LMR,
+    SEE,
+    NULL_MOVE,
+    TUNE,
+    PASSED
+};
 
 struct EnginePtr {
     std::unique_ptr<chess::IEngine> ptr;
@@ -47,6 +62,8 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     case EngineID::LMR:       engine_ptr.ptr = std::make_unique<chess::LMREngine>(); break;
     case EngineID::SEE:       engine_ptr.ptr = std::make_unique<chess::SEEEngine>(); break;
     case EngineID::NULL_MOVE: engine_ptr.ptr = std::make_unique<chess::NullEngine>(); break;
+    case EngineID::TUNE:      engine_ptr.ptr = std::make_unique<chess::TuneEngine>(); break;
+    case EngineID::PASSED:    engine_ptr.ptr = std::make_unique<chess::PassedEngine>(); break;
     }
 
     return engine_ptr;
@@ -61,15 +78,17 @@ EngineID get_engine_id(std::string_view sv) {
                   return !std::isspace(ch);
               }));
     std::unordered_map<std::string_view, EngineID> map = {
-        {"curr",  EngineID::CURR     },
-        {"rng",   EngineID::RNG      },
-        {"start", EngineID::STARTING },
-        {"phase", EngineID::PHASE    },
-        {"lazy",  EngineID::LAZY     },
-        {"check", EngineID::CHECK    },
-        {"lmr",   EngineID::LMR      },
-        {"see",   EngineID::SEE      },
-        {"null",  EngineID::NULL_MOVE},
+        {"curr",   EngineID::CURR     },
+        {"rng",    EngineID::RNG      },
+        {"start",  EngineID::STARTING },
+        {"phase",  EngineID::PHASE    },
+        {"lazy",   EngineID::LAZY     },
+        {"check",  EngineID::CHECK    },
+        {"lmr",    EngineID::LMR      },
+        {"see",    EngineID::SEE      },
+        {"null",   EngineID::NULL_MOVE},
+        {"tune",   EngineID::TUNE     },
+        {"passed", EngineID::PASSED   },
     };
     auto it = map.find(str);
     if (it == map.end())
@@ -160,7 +179,9 @@ int main(int argc, char **argv) {
                   << "    - check\n"
                   << "    - lmr\n"
                   << "    - see\n"
-                  << "    - null\n";
+                  << "    - null\n"
+                  << "    - tune\n"
+                  << "    - passed\n";
 
         return 0;
     }

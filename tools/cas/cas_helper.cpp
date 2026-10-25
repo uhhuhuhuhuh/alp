@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
         depth = std::stoul(argv[2]);
     } catch (const std::exception &e) {
         chess::Move move;
-        if (!move.parse(argv[2])) {
+        if (!move.parse_uci(argv[2])) {
             std::cerr << "ERROR: can't parse depth or move: " << argv[2] << '\n';
             return -1;
         }

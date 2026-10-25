@@ -39,7 +39,7 @@ struct Move {
                promotion_type == other.promotion_type;
     }
 
-    bool parse(std::string_view sv) {
+    bool parse_uci(std::string_view sv) {
         if (sv.size() != 4 && sv.size() != 5) {
             return false;
         }

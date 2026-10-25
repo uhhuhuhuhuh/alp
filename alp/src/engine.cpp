@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "genmoves.hpp"
+#include "misc.hpp"
 #include "piece_color.hpp"
 #include "position.hpp"
 #include "tranpostable.hpp"
@@ -95,21 +96,31 @@ inline static bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
     return ((pawns & ~bb::files[File::A]) >> 9) | ((pawns & ~bb::files[File::H]) >> 7);
 }
 
-inline static uint8_t backward(const Position &pos, Color color) {
+struct BackwardPassed {
+    bb::U64 backward;
+    bb::U64 passed;
+};
+
+inline static BackwardPassed get_backward_passed(const Position &pos, Color color) {
+    const Color enemy = !color;
+
     const bb::U64 own_pawns = pos.bb.get(PieceType::pawn)[color];
-    const bb::U64 enemy_pawns = pos.bb.get(PieceType::pawn)[!color];
+    const bb::U64 enemy_pawns = pos.bb.get(PieceType::pawn)[enemy];
 
     const bb::U64 empty = ~pos.bb.occupancy();
 
-    const bb::U64 enemy_attacks = get_pawn_attacks(enemy_pawns, !color);
+    const bb::U64 enemy_attacks = get_pawn_attacks(enemy_pawns, enemy);
     const bb::U64 own_attacks = get_pawn_attacks(own_pawns, color);
 
-    bb::U64 candidates = 0ULL;
+    BackwardPassed res{.backward = 0ULL, .passed = 0ULL};
     bb::U64 pawns = own_pawns;
 
     while (pawns) {
         const sqr_t sqr = lsb(pawns);
         pawns &= pawns - 1;
+
+        if (!(bb::passed_pawn_masks[color][sqr] & enemy_pawns))
+            res.passed |= bb::bb(sqr);
 
         if (color == Color::white ? sqr >= 56 : sqr < 8)
             continue;
@@ -127,10 +138,10 @@ inline static uint8_t backward(const Position &pos, Color color) {
         if (own_attacks & stop_bb)
             continue;
 
-        candidates |= bb::bb(sqr);
+        res.backward |= bb::bb(sqr);
     }
 
-    return popcount(candidates);
+    return res;
 }
 
 constexpr int MAX_PHASE = 24;
@@ -316,7 +327,7 @@ constexpr auto pst = [] {
         /*3*/ -30,   0,  20,  30,  30,  20,   0, -30,
         /*2*/ -30, -10,   0,   5,   5,   0, -10, -30,
         /*1*/ -50, -30, -30, -30, -30, -30, -30, -50
-        //      A    B    C    D    E    F    G    H
+        //      A    B 0   C    D    E    F    G    H
         // clang-format on
     });
 
@@ -368,23 +379,40 @@ static int32_t evaluate_piece_sqr(const Position &pos, Color perspective) {
 } // namespace chess
 
 int32_t chess::Engine::evaluate(const EvalSettings &eval_settings) const {
-    Color color = pos.st->active_color;
+    const Color color = pos.st->active_color;
+    const Color enemy = !color;
 
-    int32_t score = eval_settings.king_val * pos.bb.count_diff(PieceType::king, color) +
-                    eval_settings.queen_val * pos.bb.count_diff(PieceType::queen, color) +
-                    eval_settings.rook_val * pos.bb.count_diff(PieceType::rook, color) +
-                    eval_settings.bishop_val * pos.bb.count_diff(PieceType::bishop, color) +
-                    eval_settings.knight_val * pos.bb.count_diff(PieceType::knight, color) +
-                    eval_settings.pawn_val * pos.bb.count_diff(PieceType::pawn, color);
+    const auto &adj =
+        [&](int32_t val, const std::array<int32_t, 9> &adj, PieceType type) -> int32_t {
+        return ((val + adj[popcount(pos.bb.get(PieceType::pawn)[color])]) *
+                popcount(pos.bb.get(type)[color])) -
+               ((val + adj[popcount(pos.bb.get(PieceType::pawn)[enemy])]) *
+                popcount(pos.bb.get(type)[enemy]));
+    };
+    const auto &popcount_diff = [&](PieceType type) -> int32_t {
+        return popcount(pos.bb.get(type)[color]) - popcount(pos.bb.get(type)[enemy]);
+    };
+
+    int32_t score = eval_settings.king_val * popcount_diff(PieceType::king) +
+                    eval_settings.queen_val * popcount_diff(PieceType::queen) +
+                    adj(eval_settings.rook_val, eval_settings.rook_adj, PieceType::rook) +
+                    eval_settings.bishop_val * popcount_diff(PieceType::bishop) +
+                    adj(eval_settings.knight_val, eval_settings.knight_adj, PieceType::knight) +
+                    eval_settings.pawn_val * popcount_diff(PieceType::pawn);
 
     const auto &get_score = [&]<typename fn>(fn func) {
         return func(pos, color) - func(pos, !color);
     };
 
+    auto our_backward_passed = get_backward_passed(pos, color);
+    auto their_backward_passed = get_backward_passed(pos, enemy);
     score -= eval_settings.blocked_penalty * get_score(blocked);
     score -= eval_settings.doubled_penalty * get_score(doubled);
     score -= eval_settings.isolated_penalty * get_score(isolated);
-    score -= eval_settings.backward_penalty * get_score(backward);
+    score -= eval_settings.backward_penalty *
+             (our_backward_passed.backward - their_backward_passed.backward);
+
+    score += eval_settings.passed_val * (our_backward_passed.passed - their_backward_passed.passed);
 
     score += evaluate_piece_sqr(pos, color);
 
@@ -408,7 +436,7 @@ bool chess::Engine::should_stop(SearchContext &ctx, const SearchSettings &search
 }
 
 chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
-    if (auto *entry = ctx.tt.probe(pos.st->hash)) {
+    if (auto *entry = tt.probe(pos.st->hash)) {
         if (entry->key == pos.st->hash)
             return entry->best_move;
     }
@@ -749,6 +777,25 @@ void chess::Engine::update_pv(SearchContext &ctx, uint16_t ply, const Move &move
     ctx.pv_length[ply] = child_length + 1;
 }
 
+namespace chess {
+static bb::U64 get_advanced_passed(const chess::Position &pos, Color color) {
+    const bb::U64 own_pawns = pos.bb.get(PieceType::pawn)[color];
+    const bb::U64 enemy_pawns = pos.bb.get(PieceType::pawn)[!color];
+
+    bb::U64 pawns = own_pawns & (color == Color::white ? bb::ranks[5] | bb::ranks[6]
+                                                       : bb::ranks[1] | bb::ranks[2]);
+    bb::U64 passed = 0ULL;
+    while (pawns) {
+        const sqr_t sqr = lsb(pawns);
+        pawns &= pawns - 1;
+
+        if (!(bb::passed_pawn_masks[color][sqr] & enemy_pawns))
+            passed |= bb::bb(sqr);
+    }
+    return passed;
+}
+} // namespace chess
+
 int32_t chess::Engine::quiescence(
     int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply,
     const EvalSettings &eval_settings, const SearchSettings &search_settings
@@ -756,42 +803,37 @@ int32_t chess::Engine::quiescence(
     if (should_stop(ctx, search_settings))
         return 0;
 
-    if (ply >= search_settings.max_ply) {
-        const auto moves = gen_moves<GenType::legal>(pos);
-        switch (pos.get_game_end(moves)) {
-        case GameEnd::checkmate: return -search_settings.mate_score + ply;
-        case GameEnd::proceed:   break;
-        default:                 return 0;
-        }
-        if (pos.st->checkers != 0)
-            return 0;
-        return evaluate();
-    }
-
     const bool in_check = pos.st->checkers != 0;
 
     auto moves = gen_moves<GenType::legal>(pos);
+    switch (pos.get_game_end(moves)) {
+    case GameEnd::checkmate: return -search_settings.mate_score + ply;
+    case GameEnd::proceed:   break;
+    default:                 return 0;
+    }
 
-    const GameEnd end = pos.get_game_end(moves);
-    if (end == GameEnd::checkmate)
-        return -search_settings.mate_score + ply;
-    if (end != GameEnd::proceed)
-        return 0;
+    if (ply >= search_settings.max_ply) {
+        if (in_check)
+            return 0;
+        return evaluate(eval_settings);
+    }
 
     if (qply >= search_settings.max_qply && !in_check)
-        return evaluate();
+        return evaluate(eval_settings);
 
     if (!in_check) {
-        const int32_t stand_pat = evaluate();
+        const int32_t stand_pat = evaluate(eval_settings);
         if (stand_pat >= beta)
             return stand_pat;
         alpha = std::max(alpha, stand_pat);
     }
 
+    const bb::U64 advanced_passed = get_advanced_passed(pos, pos.st->active_color);
     for (const auto &move : moves) {
         const bool is_capture = move.flag == MoveFlag::capture || move.flag == MoveFlag::ep;
 
-        if (!in_check && !is_capture && move.promotion_type == PieceType::none)
+        if (!in_check && !is_capture && move.promotion_type == PieceType::none &&
+            (bb::bb(move.from) & advanced_passed) == 0)
             continue;
 
         State st;
@@ -851,7 +893,7 @@ int32_t chess::Engine::negamax(
         }
         if (pos.st->checkers != 0)
             return 0;
-        return evaluate();
+        return evaluate(eval_settings);
     }
 
     ctx.pv_length[ply] = 0;
@@ -886,7 +928,7 @@ int32_t chess::Engine::negamax(
     const int32_t og_alpha = alpha;
     const int32_t og_beta = beta;
 
-    auto *entry = ctx.tt.probe(pos.st->hash);
+    auto *entry = tt.probe(pos.st->hash);
     Move tt_move = Move::none();
 
     if (entry != nullptr && entry->key == pos.st->hash) {
@@ -1016,12 +1058,12 @@ int32_t chess::Engine::negamax(
     TTBound bound;
     if (best <= og_alpha) {
         bound = TTBound::upper;
-    } else if (best >= og_beta) {
+    } else if (best >= beta) {
         bound = TTBound::lower;
     } else {
         bound = TTBound::exact;
     }
-    ctx.tt.set(
+    tt.set(
         pos.st->hash,
         TTentry{
             .key = pos.st->hash,
@@ -1102,7 +1144,7 @@ chess::Engine::SearchResult chess::Engine::search(
     std::chrono::milliseconds time, const EvalSettings &eval_settings,
     const SearchSettings &search_settings
 ) {
-    SearchContext ctx{.deadline = Clock::now() + time, .stopped = false, .tt = tt, .nodes = 0};
+    SearchContext ctx{.deadline = Clock::now() + time, .stopped = false, .nodes = 0};
 
     SearchResult result;
 

@@ -88,7 +88,7 @@ std::string process_request(chess::Engine &engine, const std::string &arg) {
     } catch (const std::exception &) {
         chess::Move move;
 
-        if (!move.parse(arg)) {
+        if (!move.parse_uci(arg)) {
             return "ERROR: can't parse time or move";
         }
 

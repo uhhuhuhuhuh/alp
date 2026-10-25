@@ -83,6 +83,32 @@ constexpr auto slider_between = [] {
     return slider_between;
 }();
 
+constexpr auto passed_pawn_masks = [] {
+    ColorArray<std::array<U64, 64>> masks{};
+
+    for (int sq = 0; sq < 64; ++sq) {
+        const int file = sq % 8;
+        const int rank = sq / 8;
+
+        for (Color color : {Color::white, Color::black}) {
+            for (int r = 0; r < 8; ++r) {
+                const bool ahead =
+                    color == Color::white ? r > rank : r < rank;
+
+                if (!ahead)
+                    continue;
+
+                for (int f = file - 1; f <= file + 1; ++f) {
+                    if (f >= 0 && f < 8)
+                        masks[color][sq] |= bb(r * 8 + f);
+                }
+            }
+        }
+    }
+
+    return masks;
+}();
+
 constexpr std::size_t bishop_attacks_size = [] {
     std::size_t size = 0;
     for (int bits : bishop_bit_idxs)
