@@ -4,14 +4,28 @@ import chess.pgn
 
 
 def convert_pgn_to_tsv(
-    input_path: str, output_path: str, game_limit: int | None = None, step: int = 1
+    input_path: str,
+    output_path: str,
+    game_limit: int | None = None,
+    step: int = 1,
 ) -> None:
     positions_written = 0
+    positions_seen = 0
     games_processed = 0
+
+    if step < 1:
+        raise ValueError("Step must be at least 1.")
+
+    result_scores = {
+        "1-0": 1.0,
+        "1/2-1/2": 0.5,
+        "0-1": 0.0,
+    }
 
     with open(input_path, "r", encoding="utf-8") as pgn_file, open(
         output_path, "w", encoding="utf-8"
     ) as tsv_file:
+
         while True:
             if game_limit is not None and games_processed >= game_limit:
                 break
@@ -21,31 +35,30 @@ def convert_pgn_to_tsv(
                 break
 
             result = game.headers.get("Result", "*")
-            result_scores = {
-                "1-0": 1.0,
-                "1/2-1/2": 0.5,
-                "0-1": 0.0,
-            }
 
             if result not in result_scores:
                 continue
 
             white_result = result_scores[result]
             board = game.board()
-            positions = [board.fen()]
+
+            positions = []
 
             for move in game.mainline_moves():
                 board.push(move)
                 positions.append(board.fen())
 
-            for i in range(0, len(positions), step):
-                fen = positions[i]
-                tsv_file.write(f"{fen}\t{white_result}\n")
-                positions_written += 1
+            for fen in positions:
+                if positions_seen % step == 0:
+                    tsv_file.write(f"{fen}\t{white_result}\n")
+                    positions_written += 1
+
+                positions_seen += 1
 
             games_processed += 1
 
     print(f"Games processed: {games_processed}")
+    print(f"Positions examined: {positions_seen}")
     print(f"Positions written: {positions_written}")
     print(f"Output file: {output_path}")
 
@@ -72,7 +85,7 @@ def main() -> None:
         "--step",
         type=int,
         default=1,
-        help="Save every Nth position (default: 1, save all positions)",
+        help="Save every Nth position across all games (default: 1)",
     )
 
     args = parser.parse_args()

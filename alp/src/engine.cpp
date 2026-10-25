@@ -97,8 +97,8 @@ inline static bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
 }
 
 struct BackwardPassed {
-    bb::U64 backward;
-    bb::U64 passed;
+    int16_t backward_count;
+    int16_t passed_count;
 };
 
 inline static BackwardPassed get_backward_passed(const Position &pos, Color color) {
@@ -112,7 +112,8 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
     const bb::U64 enemy_attacks = get_pawn_attacks(enemy_pawns, enemy);
     const bb::U64 own_attacks = get_pawn_attacks(own_pawns, color);
 
-    BackwardPassed res{.backward = 0ULL, .passed = 0ULL};
+    bb::U64 backward = 0ULL;
+    bb::U64 passed = 0ULL;
     bb::U64 pawns = own_pawns;
 
     while (pawns) {
@@ -120,7 +121,7 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
         pawns &= pawns - 1;
 
         if (!(bb::passed_pawn_masks[color][sqr] & enemy_pawns))
-            res.passed |= bb::bb(sqr);
+            passed |= bb::bb(sqr);
 
         if (color == Color::white ? sqr >= 56 : sqr < 8)
             continue;
@@ -138,201 +139,18 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
         if (own_attacks & stop_bb)
             continue;
 
-        res.backward |= bb::bb(sqr);
+        backward |= bb::bb(sqr);
     }
 
-    return res;
+    return BackwardPassed{
+        .backward_count = static_cast<int16_t>(popcount(backward)),
+        .passed_count = static_cast<int16_t>(popcount(passed))
+    };
 }
 
 constexpr int MAX_PHASE = 24;
 
-template <typename T>
-constexpr std::array<T, 64> convert_formatted_board(const std::array<T, 64> &board) {
-    std::array<T, 64> arr{};
-    for (std::size_t i = 0; i < 64; i++) {
-        file_t file = i % 8;
-        rank_t rank = 7 - (i / 8);
-        arr[file + rank * 8] = board[i];
-    }
-    return arr;
-}
-
 enum class GamePhase { middlegame, endgame };
-
-template <typename T> using PhasePST = std::array<T, 64>;
-
-template <typename T> struct PieceSquareTables {
-    PhasePST<T> middlegame;
-    PhasePST<T> endgame;
-};
-
-constexpr auto pst = [] {
-    PieceArray<PieceSquareTables<int16_t>> result{};
-
-    result[PieceType::pawn].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/   0,   0,   0,   0,   0,   0,   0,   0,
-        /*7*/  10,  10,  20,  30,  30,  20,  10,  10,
-        /*6*/   5,   5,  10,  25,  25,  10,   5,   5,
-        /*5*/   0,   0,   0,  20,  20,   0,   0,   0,
-        /*4*/   5,  -5, -10,   0,   0, -10,  -5,   5,
-        /*3*/   5,  10,  10, -20, -20,  10,  10,   5,
-        /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
-        /*1*/   0,   0,   0,   0,   0,   0,   0,   0
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::pawn].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/   0,   0,   0,   0,   0,   0,   0,   0,
-        /*7*/  80,  80,  80,  80,  80,  80,  80,  80,
-        /*6*/  50,  50,  50,  50,  50,  50,  50,  50,
-        /*5*/  30,  30,  30,  30,  30,  30,  30,  30,
-        /*4*/  15,  15,  15,  20,  20,  15,  15,  15,
-        /*3*/   5,   5,  10,  15,  15,  10,   5,   5,
-        /*2*/   0,   0,   0,   0,   0,   0,   0,   0,
-        /*1*/   0,   0,   0,   0,   0,   0,   0,   0
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-
-    result[PieceType::knight].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -50, -40, -30, -30, -30, -30, -40, -50,
-        /*7*/ -40, -20,   0,   5,   5,   0, -20, -40,
-        /*6*/ -30,   5,  10,  15,  15,  10,   5, -30,
-        /*5*/ -30,   0,  15,  20,  20,  15,   0, -30,
-        /*4*/ -30,   5,  15,  20,  20,  15,   5, -30,
-        /*3*/ -30,   0,  10,  15,  15,  10,   0, -30,
-        /*2*/ -40, -20,   0,   0,   0,   0, -20, -40,
-        /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::knight].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -50, -40, -30, -30, -30, -30, -40, -50,
-        /*7*/ -40, -20,   0,   5,   5,   0, -20, -40,
-        /*6*/ -30,   5,  15,  20,  20,  15,   5, -30,
-        /*5*/ -30,   5,  20,  25,  25,  20,   5, -30,
-        /*4*/ -30,   5,  20,  25,  25,  20,   5, -30,
-        /*3*/ -30,   5,  15,  20,  20,  15,   5, -30,
-        /*2*/ -40, -20,   0,   5,   5,   0, -20, -40,
-        /*1*/ -50, -40, -30, -30, -30, -30, -40, -50
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-
-    result[PieceType::bishop].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -20, -10, -10, -10, -10, -10, -10, -20,
-        /*7*/ -10,   5,   0,   0,   0,   0,   5, -10,
-        /*6*/ -10,  10,  10,  10,  10,  10,  10, -10,
-        /*5*/ -10,   0,  10,  10,  10,  10,   0, -10,
-        /*4*/ -10,   5,   5,  10,  10,   5,   5, -10,
-        /*3*/ -10,   0,   5,  10,  10,   5,   0, -10,
-        /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
-        /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::bishop].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -20, -10, -10, -10, -10, -10, -10, -20,
-        /*7*/ -10,   5,   5,   5,   5,   5,   5, -10,
-        /*6*/ -10,  10,  15,  15,  15,  15,  10, -10,
-        /*5*/ -10,   5,  15,  20,  20,  15,   5, -10,
-        /*4*/ -10,   5,  15,  20,  20,  15,   5, -10,
-        /*3*/ -10,   5,  10,  15,  15,  10,   5, -10,
-        /*2*/ -10,   5,   5,   5,   5,   5,   5, -10,
-        /*1*/ -20, -10, -10, -10, -10, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-
-    result[PieceType::rook].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/   0,   0,   5,  10,  10,   5,   0,   0,
-        /*7*/   5,  10,  10,  10,  10,  10,  10,   5,
-        /*6*/  -5,   0,   0,   0,   0,   0,   0,  -5,
-        /*5*/  -5,   0,   0,   0,   0,   0,   0,  -5,
-        /*4*/  -5,   0,   0,   0,   0,   0,   0,  -5,
-        /*3*/  -5,   0,   0,   0,   0,   0,   0,  -5,
-        /*2*/  -5,   0,   0,   0,   0,   0,   0,  -5,
-        /*1*/   0,   0,   5,  10,  10,   5,   0,   0
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::rook].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/   0,   0,   5,  10,  10,   5,   0,   0,
-        /*7*/   5,  10,  15,  15,  15,  15,  10,   5,
-        /*6*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*5*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*4*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*3*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*2*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*1*/   0,   0,   5,  10,  10,   5,   0,   0
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-
-    result[PieceType::queen].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -20, -10, -10,  -5,  -5, -10, -10, -20,
-        /*7*/ -10,   0,   5,   0,   0,   0,   0, -10,
-        /*6*/ -10,   5,   5,   5,   5,   5,   0, -10,
-        /*5*/  -5,   0,   5,   5,   5,   5,   0,  -5,
-        /*4*/   0,   0,   5,   5,   5,   5,   0,  -5,
-        /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
-        /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
-        /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::queen].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -20, -10, -10,  -5,  -5, -10, -10, -20,
-        /*7*/ -10,   0,   5,   5,   5,   5,   0, -10,
-        /*6*/ -10,   5,  10,  10,  10,  10,   5, -10,
-        /*5*/  -5,   0,  10,  10,  10,  10,   0,  -5,
-        /*4*/   0,   0,  10,  10,  10,  10,   0,  -5,
-        /*3*/ -10,   0,   5,   5,   5,   5,   0, -10,
-        /*2*/ -10,   0,   0,   0,   0,   0,   0, -10,
-        /*1*/ -20, -10, -10,  -5,  -5, -10, -10, -20
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-
-    result[PieceType::king].middlegame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -30, -40, -40, -50, -50, -40, -40, -30,
-        /*7*/ -30, -40, -40, -50, -50, -40, -40, -30,
-        /*6*/ -30, -40, -40, -50, -50, -40, -40, -30,
-        /*5*/ -30, -40, -40, -50, -50, -40, -40, -30,
-        /*4*/ -20, -30, -30, -40, -40, -30, -30, -20,
-        /*3*/ -10, -20, -20, -20, -20, -20, -20, -10,
-        /*2*/  20,  20,   0,   0,   0,   0,  20,  20,
-        /*1*/  20,  30,  10,   0,   0,  10,  30,  20
-        //      A    B    C    D    E    F    G    H
-        // clang-format on
-    });
-    result[PieceType::king].endgame = convert_formatted_board<int16_t>({
-        // clang-format off
-        /*8*/ -50, -30, -30, -30, -30, -30, -30, -50,
-        /*7*/ -30, -10,   0,   5,   5,   0, -10, -30,
-        /*6*/ -30,   0,  20,  30,  30,  20,   0, -30,
-        /*5*/ -30,   5,  30,  40,  40,  30,   5, -30,
-        /*4*/ -30,   5,  30,  40,  40,  30,   5, -30,
-        /*3*/ -30,   0,  20,  30,  30,  20,   0, -30,
-        /*2*/ -30, -10,   0,   5,   5,   0, -10, -30,
-        /*1*/ -50, -30, -30, -30, -30, -30, -30, -50
-        //      A    B 0   C    D    E    F    G    H
-        // clang-format on
-    });
-
-    return result;
-}();
 
 static int count_pieces(const Position &pos, PieceType type) {
     return popcount(pos.bb.get(type)[Color::white]) + popcount(pos.bb.get(type)[Color::black]);
@@ -349,12 +167,15 @@ static int calculate_game_phase(const Position &pos) {
     return std::min(phase, MAX_PHASE);
 }
 
-static int32_t evaluate_piece_sqr(const Position &pos, Color perspective) {
+static int32_t evaluate_piece_sqr(
+    const Position &pos, Color perspective, const PieceArray<Engine::PieceSquareTables> &pst
+) {
     int32_t mg_score = 0;
     int32_t eg_score = 0;
 
     for (Color color : {Color::white, Color::black}) {
         const int sign = (color == perspective) ? 1 : -1;
+
         for (PieceType type :
              {PieceType::pawn,
               PieceType::knight,
@@ -363,10 +184,13 @@ static int32_t evaluate_piece_sqr(const Position &pos, Color perspective) {
               PieceType::queen,
               PieceType::king}) {
             bb::U64 pieces = pos.bb.get(type)[color];
+
             while (pieces) {
                 const sqr_t sq = lsb(pieces);
                 pieces &= pieces - 1;
+
                 const sqr_t relative_sq = color == Color::white ? sq : sq ^ 56;
+
                 mg_score += sign * pst[type].middlegame[relative_sq];
                 eg_score += sign * pst[type].endgame[relative_sq];
             }
@@ -374,6 +198,7 @@ static int32_t evaluate_piece_sqr(const Position &pos, Color perspective) {
     }
 
     const int phase = calculate_game_phase(pos);
+
     return (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 }
 } // namespace chess
@@ -401,7 +226,7 @@ int32_t chess::Engine::evaluate(const EvalSettings &eval_settings) const {
                     eval_settings.pawn_val * popcount_diff(PieceType::pawn);
 
     const auto &get_score = [&]<typename fn>(fn func) {
-        return func(pos, color) - func(pos, !color);
+        return static_cast<int16_t>(func(pos, color)) - static_cast<int16_t>(func(pos, !color));
     };
 
     auto our_backward_passed = get_backward_passed(pos, color);
@@ -410,20 +235,25 @@ int32_t chess::Engine::evaluate(const EvalSettings &eval_settings) const {
     score -= eval_settings.doubled_penalty * get_score(doubled);
     score -= eval_settings.isolated_penalty * get_score(isolated);
     score -= eval_settings.backward_penalty *
-             (our_backward_passed.backward - their_backward_passed.backward);
+             (our_backward_passed.backward_count - their_backward_passed.backward_count);
 
-    score += eval_settings.passed_val * (our_backward_passed.passed - their_backward_passed.passed);
+    score += eval_settings.passed_val *
+             (our_backward_passed.passed_count - their_backward_passed.passed_count);
 
-    score += evaluate_piece_sqr(pos, color);
+    score += evaluate_piece_sqr(pos, color, eval_settings.pst);
 
     return score;
 }
 
-int32_t chess::Engine::evaluate() const { return evaluate(get_default_eval_settings()); }
+int32_t chess::Engine::evaluate() const {
+    static constexpr EvalSettings defaults{};
+    return evaluate(defaults);
+}
 
 bool chess::Engine::should_stop(SearchContext &ctx, const SearchSettings &search_settings) {
     ctx.nodes++;
 
+    assert(search_settings.time_check_interval > 0);
     if ((ctx.nodes % search_settings.time_check_interval) != 0)
         return false;
 
@@ -899,7 +729,8 @@ int32_t chess::Engine::negamax(
     ctx.pv_length[ply] = 0;
 
     if (depth == 0)
-        return quiescence(alpha, beta, ctx, ply, 0, eval_settings, search_settings);
+        return evaluate(eval_settings);
+    // return quiescence(alpha, beta, ctx, ply, 0, eval_settings, search_settings);
 
     auto moves = chess::gen_moves<GenType::legal>(pos);
     switch (pos.get_game_end(moves)) {
@@ -1146,13 +977,14 @@ chess::Engine::SearchResult chess::Engine::search(
 ) {
     SearchContext ctx{.deadline = Clock::now() + time, .stopped = false, .nodes = 0};
 
-    SearchResult result;
+    SearchResult result{.best_move = Move::none(), .score = 0, .depth = 0};
 
     auto root_moves = chess::gen_moves<GenType::legal>(pos);
     if (pos.get_game_end(root_moves) != GameEnd::proceed) {
         return result;
     }
     result.best_move = root_moves[0];
+    result.score = evaluate(eval_settings);
     for (uint16_t depth = 1; depth < std::numeric_limits<uint16_t>().max(); depth++) {
         if (Clock::now() >= ctx.deadline)
             break;
@@ -1208,5 +1040,7 @@ chess::Engine::SearchResult chess::Engine::search(
 }
 
 chess::Engine::SearchResult chess::Engine::search(std::chrono::milliseconds time) {
-    return search(time, get_default_eval_settings(), get_default_search_settings());
+    static constexpr EvalSettings eval_defaults{};
+    static constexpr SearchSettings search_defaults{};
+    return search(time, eval_defaults, search_defaults);
 }

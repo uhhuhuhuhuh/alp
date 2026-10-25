@@ -97,8 +97,8 @@ inline static bb::U64 get_pawn_attacks(bb::U64 pawns, Color color) {
 }
 
 struct BackwardPassed {
-    bb::U64 backward;
-    bb::U64 passed;
+    bb::U64 backward_count;
+    bb::U64 passed_count;
 };
 
 inline static BackwardPassed get_backward_passed(const Position &pos, Color color) {
@@ -112,7 +112,7 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
     const bb::U64 enemy_attacks = get_pawn_attacks(enemy_pawns, enemy);
     const bb::U64 own_attacks = get_pawn_attacks(own_pawns, color);
 
-    BackwardPassed res{.backward = 0ULL, .passed = 0ULL};
+    BackwardPassed res{.backward_count = 0ULL, .passed_count = 0ULL};
     bb::U64 pawns = own_pawns;
 
     while (pawns) {
@@ -120,7 +120,7 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
         pawns &= pawns - 1;
 
         if (!(bb::passed_pawn_masks[color][sqr] & enemy_pawns))
-            res.passed |= bb::bb(sqr);
+            res.passed_count |= bb::bb(sqr);
 
         if (color == Color::white ? sqr >= 56 : sqr < 8)
             continue;
@@ -138,7 +138,7 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
         if (own_attacks & stop_bb)
             continue;
 
-        res.backward |= bb::bb(sqr);
+        res.backward_count |= bb::bb(sqr);
     }
 
     return res;
@@ -410,9 +410,9 @@ int32_t chess::PassedEngine::evaluate(const EvalSettings &eval_settings) const {
     score -= eval_settings.doubled_penalty * get_score(doubled);
     score -= eval_settings.isolated_penalty * get_score(isolated);
     score -= eval_settings.backward_penalty *
-             (our_backward_passed.backward - their_backward_passed.backward);
+             (our_backward_passed.backward_count - their_backward_passed.backward_count);
 
-    score += eval_settings.passed_val * (our_backward_passed.passed - their_backward_passed.passed);
+    score += eval_settings.passed_val * (our_backward_passed.passed_count - their_backward_passed.passed_count);
 
     score += evaluate_piece_sqr(pos, color);
 
