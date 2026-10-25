@@ -16,6 +16,7 @@
 #include "see.hpp"
 #include "starting.hpp"
 #include "tune.hpp"
+#include "tunedpst.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -39,7 +40,8 @@ enum class EngineID {
     SEE,
     NULL_MOVE,
     TUNE,
-    PASSED
+    PASSED,
+    TUNEDPST,
 };
 
 struct EnginePtr {
@@ -64,6 +66,7 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     case EngineID::NULL_MOVE: engine_ptr.ptr = std::make_unique<chess::NullEngine>(); break;
     case EngineID::TUNE:      engine_ptr.ptr = std::make_unique<chess::TuneEngine>(); break;
     case EngineID::PASSED:    engine_ptr.ptr = std::make_unique<chess::PassedEngine>(); break;
+    case EngineID::TUNEDPST:  engine_ptr.ptr = std::make_unique<chess::TunedPSTEngine>(); break;
     }
 
     return engine_ptr;
@@ -78,17 +81,18 @@ EngineID get_engine_id(std::string_view sv) {
                   return !std::isspace(ch);
               }));
     std::unordered_map<std::string_view, EngineID> map = {
-        {"curr",   EngineID::CURR     },
-        {"rng",    EngineID::RNG      },
-        {"start",  EngineID::STARTING },
-        {"phase",  EngineID::PHASE    },
-        {"lazy",   EngineID::LAZY     },
-        {"check",  EngineID::CHECK    },
-        {"lmr",    EngineID::LMR      },
-        {"see",    EngineID::SEE      },
-        {"null",   EngineID::NULL_MOVE},
-        {"tune",   EngineID::TUNE     },
-        {"passed", EngineID::PASSED   },
+        {"curr",      EngineID::CURR     },
+        {"rng",       EngineID::RNG      },
+        {"start",     EngineID::STARTING },
+        {"phase",     EngineID::PHASE    },
+        {"lazy",      EngineID::LAZY     },
+        {"check",     EngineID::CHECK    },
+        {"lmr",       EngineID::LMR      },
+        {"see",       EngineID::SEE      },
+        {"null",      EngineID::NULL_MOVE},
+        {"tune",      EngineID::TUNE     },
+        {"passed",    EngineID::PASSED   },
+        {"tuned-pst", EngineID::TUNEDPST },
     };
     auto it = map.find(str);
     if (it == map.end())
@@ -181,7 +185,8 @@ int main(int argc, char **argv) {
                   << "    - see\n"
                   << "    - null\n"
                   << "    - tune\n"
-                  << "    - passed\n";
+                  << "    - passed\n"
+                  << "    - tuned-pst\n";
 
         return 0;
     }

@@ -428,7 +428,7 @@ chess::GameEnd chess::Position::get_game_end(const MoveStack<> &moves) const {
     uint8_t count = 1, distance = 2;
     for (State *curr = st->prev != nullptr ? st->prev->prev : nullptr;
          curr != nullptr && distance <= st->halfmove_clock;
-         curr = st->prev != nullptr ? st->prev->prev : nullptr, distance += 2) {
+         curr = curr->prev != nullptr ? curr->prev->prev : nullptr, distance += 2) {
         if (curr->hash == st->hash && ++count >= 3) {
             return GameEnd::threefold;
         }
