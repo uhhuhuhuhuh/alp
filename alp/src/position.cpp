@@ -1,5 +1,6 @@
 #include "position.hpp"
 #include "bitboard.hpp"
+#include "constbb.hpp"
 #include "genmoves.hpp"
 #include "misc.hpp"
 #include "move.hpp"
@@ -415,7 +416,7 @@ chess::GameEnd chess::Position::get_game_end(const MoveStack<> &moves) const {
         const bb::U64 b_bishop = bb.get(PieceType::bishop)[Color::black];
         if (has_only_king_and_bishop(Color::white, w_bishop) &&
             has_only_king_and_bishop(Color::black, b_bishop) &&
-            bb::is_sqr_white(lsb(w_bishop)) == bb::is_sqr_white(lsb(b_bishop))) {
+            (w_bishop & bb::light_sqrs()) == (b_bishop & bb::light_sqrs())) {
             return GameEnd::dead_pos;
         }
     }

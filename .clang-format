@@ -4,6 +4,9 @@ AlignConsecutiveShortCaseStatements:
   Enabled: true
 
 AllowShortCaseLabelsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Always
+AllowShortBlocksOnASingleLine: Always
+AllowShortLoopsOnASingleLine: true
 
 ColumnLimit: 100
 IndentWidth: 4

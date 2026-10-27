@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -22,7 +23,7 @@ struct Sample {
 
 using Settings = chess::Engine::EvalSettings;
 
-constexpr double kScalingFactor = 1.0;
+constexpr double kScalingFactor = 0.4;
 constexpr double kImprovementThreshold = 1e-12;
 
 struct Progress {
@@ -43,8 +44,7 @@ struct Progress {
     }
 
     static std::string format_time(double value) {
-        if (!std::isfinite(value) || value < 0.0)
-            return "--:--";
+        if (!std::isfinite(value) || value < 0.0) return "--:--";
 
         const auto total_seconds = static_cast<std::uint64_t>(value);
 
@@ -53,8 +53,7 @@ struct Progress {
         const auto secs = total_seconds % 60;
 
         std::ostringstream out;
-        if (hours > 0)
-            out << hours << ':' << std::setw(2) << std::setfill('0') << minutes << ':';
+        if (hours > 0) out << hours << ':' << std::setw(2) << std::setfill('0') << minutes << ':';
         else
             out << minutes << ':';
 
@@ -103,8 +102,7 @@ struct Progress {
         std::cout << '\r' << "Step " << step_index << '/' << step_count << " | Size "
                   << std::setw(2) << step << " | Pass " << pass << " | [";
 
-        for (std::size_t i = 0; i < bar_width; ++i)
-            std::cout << (i < filled ? '#' : '-');
+        for (std::size_t i = 0; i < bar_width; ++i) std::cout << (i < filled ? '#' : '-');
 
         std::cout << "] " << std::fixed << std::setprecision(1) << std::setw(5) << percent << "% "
                   << '(' << completed << '/' << total << ')' << " | Loss " << std::setprecision(8)
@@ -123,17 +121,13 @@ struct Progress {
 // FEN<TAB>result
 std::vector<Sample> load_samples(const std::string &path) {
     std::ifstream file(path);
-    if (!file) {
-        throw std::runtime_error("Could not open " + path);
-    }
+    if (!file) { throw std::runtime_error("Could not open " + path); }
 
     std::vector<Sample> samples;
     std::string line;
 
     while (std::getline(file, line)) {
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
+        if (line.empty() || line[0] == '#') { continue; }
 
         const auto tab_position = line.rfind('\t');
         if (tab_position == std::string::npos) {
@@ -150,9 +144,7 @@ std::vector<Sample> load_samples(const std::string &path) {
         samples.push_back({fen, result});
     }
 
-    if (samples.empty()) {
-        throw std::runtime_error("Dataset is empty");
-    }
+    if (samples.empty()) { throw std::runtime_error("Dataset is empty"); }
 
     return samples;
 }
@@ -183,9 +175,7 @@ double calculate_loss(
 
         double evaluation = engine.evaluate(settings);
 
-        if (engine.pos.st->active_color == chess::Color::black) {
-            evaluation = -evaluation;
-        }
+        if (engine.pos.st->active_color == chess::Color::black) { evaluation = -evaluation; }
 
         const double prediction = predict_white_score(evaluation);
         const double difference = prediction - sample.result;
@@ -194,6 +184,74 @@ double calculate_loss(
     }
 
     return total_squared_error / static_cast<double>(samples.size());
+}
+
+void print_score_by_centipawns(
+    chess::Engine &engine, const std::vector<Sample> &samples, const Settings &settings
+) {
+    constexpr int bin_width = 50;
+    constexpr std::size_t min_samples = 20;
+
+    struct Bin {
+        std::size_t count = 0;
+        double total_eval = 0.0;
+        double total_result = 0.0;
+        double total_prediction = 0.0;
+    };
+
+    std::map<int, Bin> bins;
+
+    for (const auto &sample : samples) {
+        const auto parse_error = engine.parse_fen(sample.fen);
+
+        if (parse_error != chess::Position::FenParseErr::ok) {
+            throw std::runtime_error("Failed to parse FEN: " + sample.fen);
+        }
+
+        double evaluation = engine.evaluate(settings);
+
+        // Convert to White's perspective, matching calculate_loss().
+        if (engine.pos.st->active_color == chess::Color::black) { evaluation = -evaluation; }
+
+        const int bin = static_cast<int>(std::floor(evaluation / bin_width));
+
+        auto &b = bins[bin];
+
+        ++b.count;
+        b.total_eval += evaluation;
+        b.total_result += sample.result;
+        b.total_prediction += predict_white_score(evaluation);
+    }
+
+    std::cout << "\nAverage score by centipawn range\n";
+    std::cout << "K = " << kScalingFactor << '\n';
+
+    std::cout << std::left << std::setw(19) << "Eval range" << std::right << std::setw(9) << "Count"
+              << std::setw(12) << "Mean cp" << std::setw(15) << "Actual score" << std::setw(18)
+              << "Predicted score" << '\n';
+
+    for (const auto &[index, b] : bins) {
+        if (b.count < min_samples) { continue; }
+
+        const int low = index * bin_width;
+        const int high = low + bin_width;
+
+        const double n = static_cast<double>(b.count);
+        const double mean_eval = b.total_eval / n;
+        const double actual = b.total_result / n;
+        const double predicted = b.total_prediction / n;
+
+        std::ostringstream range;
+        range << '[' << low << ", " << high << ']';
+
+        std::cout << std::left << std::setw(19) << range.str() << std::right << std::setw(9)
+                  << b.count << std::setw(12) << std::fixed << std::setprecision(1) << mean_eval
+                  << std::setw(15) << std::setprecision(4) << actual << std::setw(18) << predicted
+                  << '\n';
+    }
+
+    std::cout << "\nActual score = wins + 0.5 * draws, divided by games.\n"
+              << "Predicted score = mean logistic prediction per position.\n";
 }
 
 struct Parameter {
@@ -210,7 +268,7 @@ struct Parameter {
     bool pst_endgame = false;
 };
 
-const std::array<Parameter, 9> kBaseParameters{
+const std::array<Parameter, 12> kBaseParameters{
     {
      {"queen_val", &Settings::queen_val, 700, 1200},
      {"rook_val", &Settings::rook_val, 350, 700},
@@ -222,7 +280,10 @@ const std::array<Parameter, 9> kBaseParameters{
      {"isolated_penalty", &Settings::isolated_penalty, 0, 150},
      {"backward_penalty", &Settings::backward_penalty, 0, 150},
 
-     {"passed_val", &Settings::passed_val, 0, 150},
+     {"passed_bonus", &Settings::passed_bonus, 0, 150},
+     {"bishop_pair_bonus", &Settings::bishop_pair_bonus, 0, 150},
+     {"king_shield_2_bonus", &Settings::king_shield_2_bonus, 0, 150},
+     {"king_shield_3_bonus", &Settings::king_shield_3_bonus, 0, 150},
      }
 };
 
@@ -249,9 +310,7 @@ int32_t get_parameter_value(const Settings &settings, const Parameter &parameter
         return parameter.pst_endgame ? tables.endgame[square] : tables.middlegame[square];
     }
 
-    if (parameter.rook_adj_idx.has_value()) {
-        return settings.rook_adj[*parameter.rook_adj_idx];
-    }
+    if (parameter.rook_adj_idx.has_value()) { return settings.rook_adj[*parameter.rook_adj_idx]; }
 
     if (parameter.knight_adj_idx.has_value()) {
         return settings.knight_adj[*parameter.knight_adj_idx];
@@ -348,9 +407,7 @@ bool optimize_parameters(
 
         for (const int sign : {-1, 1}) {
             const int32_t candidate = original_value + sign * step;
-            if (candidate < parameter.minimum || candidate > parameter.maximum) {
-                continue;
-            }
+            if (candidate < parameter.minimum || candidate > parameter.maximum) { continue; }
 
             set_parameter_value(settings, parameter, candidate);
 
@@ -363,9 +420,7 @@ bool optimize_parameters(
 
         set_parameter_value(settings, parameter, best_value);
 
-        if (best_value != original_value) {
-            improved = true;
-        }
+        if (best_value != original_value) { improved = true; }
 
         progress.update(best_loss);
     }
@@ -391,28 +446,25 @@ void optimize_at_step_size(
 
 void print_settings(const Settings &settings, double final_loss) {
     std::cout << "\nTuned settings:\n";
-    std::cout << "king_val = " << settings.king_val << '\n';
-    std::cout << "pawn_val = " << settings.pawn_val << '\n';
+    std::cout << "int32_t king_val = " << settings.king_val << '\n';
+    std::cout << "int32_t pawn_val = " << settings.pawn_val << '\n';
 
     for (const auto &parameter : kBaseParameters) {
-        std::cout << parameter.name << " = " << get_parameter_value(settings, parameter) << '\n';
+        std::cout << "int32_t " << parameter.name << " = "
+                  << get_parameter_value(settings, parameter) << '\n';
     }
 
     std::cout << '\n';
     std::cout << "std::array<int32_t, 9> rook_adj = {";
     for (std::size_t i = 0; i < settings.rook_adj.size(); ++i) {
-        if (i > 0) {
-            std::cout << ", ";
-        }
+        if (i > 0) { std::cout << ", "; }
         std::cout << settings.rook_adj[i];
     }
     std::cout << "};\n";
 
     std::cout << "std::array<int32_t, 9> knight_adj = {";
     for (std::size_t i = 0; i < settings.knight_adj.size(); ++i) {
-        if (i > 0) {
-            std::cout << ", ";
-        }
+        if (i > 0) { std::cout << ", "; }
         std::cout << settings.knight_adj[i];
     }
     std::cout << "};\n";
@@ -437,13 +489,9 @@ void print_settings(const Settings &settings, double final_loss) {
             for (chess::rank_t rank = 7; rank >= 0; --rank) {
                 std::cout << "        /*" << rank + 1 << "*/ ";
                 for (chess::file_t file = 0; file < 8; ++file) {
-                    if (file > 0) {
-                        std::cout << ' ';
-                    }
+                    if (file > 0) { std::cout << ' '; }
                     std::cout << std::setw(4) << values[file + rank * 8];
-                    if (file < 7) {
-                        std::cout << ',';
-                    }
+                    if (file < 7) { std::cout << ','; }
                 }
 
                 std::cout << (rank > 0 ? ",\n" : "\n");
@@ -478,6 +526,7 @@ int main(int argc, char **argv) {
         std::cout << "Positions: " << samples.size() << '\n';
         std::cout << std::setprecision(8);
         std::cout << "Initial loss: " << best_loss << '\n';
+        print_score_by_centipawns(engine, samples, settings);
 
         constexpr std::array<int, 6> kStepSizes{50, 25, 10, 5, 2, 1};
 

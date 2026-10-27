@@ -35,8 +35,8 @@ constexpr std::array<U64, 8> ranks = {
     0xFF00000000000000ULL
 };
 
-constexpr U64 white_sqrs = 0x55AA55AA55AA55AAULL;
-constexpr U64 black_sqrs = ~white_sqrs;
+constexpr U64 light_sqrs()  {return 0x55AA55AA55AA55AAULL;}
+constexpr U64 dark_sqrs() {return ~light_sqrs();}
 
 constexpr std::array<int, 64> bishop_bit_idxs = {6, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5,
                                                  5, 5, 7, 7, 7, 7, 5, 5, 5, 5, 7, 9, 9, 7, 5, 5,

@@ -11,8 +11,6 @@
 namespace chess::bb {
 using BBColorArray = ColorArray<U64>;
 
-inline constexpr bool is_sqr_white(sqr_t sqr) { return (sqr & white_sqrs); }
-
 inline void output_bb(U64 bitboard, std::ostream &out) {
     // irank = inverted rank
     for (rank_t irank = 0; irank < 8; irank++) {
