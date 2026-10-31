@@ -5,6 +5,7 @@
 #include "fen_pos.hpp"
 #include "position.hpp"
 
+#include "better_eval.hpp"
 #include "check.hpp"
 #include "engine.hpp"
 #include "lazy.hpp"
@@ -42,6 +43,7 @@ enum class EngineID {
     TUNE,
     PASSED,
     TUNEDPST,
+    BETTEREVAL,
 };
 
 struct EnginePtr {
@@ -54,19 +56,20 @@ EnginePtr get_engine(EngineID id, bool is_player_one) {
     EnginePtr engine_ptr{.id = id, .is_player_one = is_player_one};
 
     switch (id) {
-    case EngineID::NONE:      break;
-    case EngineID::RNG:       engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
-    case EngineID::CURR:      engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
-    case EngineID::STARTING:  engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
-    case EngineID::PHASE:     engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
-    case EngineID::LAZY:      engine_ptr.ptr = std::make_unique<chess::LazyEngine>(); break;
-    case EngineID::CHECK:     engine_ptr.ptr = std::make_unique<chess::CheckEngine>(); break;
-    case EngineID::LMR:       engine_ptr.ptr = std::make_unique<chess::LMREngine>(); break;
-    case EngineID::SEE:       engine_ptr.ptr = std::make_unique<chess::SEEEngine>(); break;
-    case EngineID::NULL_MOVE: engine_ptr.ptr = std::make_unique<chess::NullEngine>(); break;
-    case EngineID::TUNE:      engine_ptr.ptr = std::make_unique<chess::TuneEngine>(); break;
-    case EngineID::PASSED:    engine_ptr.ptr = std::make_unique<chess::PassedEngine>(); break;
-    case EngineID::TUNEDPST:  engine_ptr.ptr = std::make_unique<chess::TunedPSTEngine>(); break;
+    case EngineID::NONE:       break;
+    case EngineID::RNG:        engine_ptr.ptr = std::make_unique<chess::RNGEngine>(); break;
+    case EngineID::CURR:       engine_ptr.ptr = std::make_unique<chess::Engine>(); break;
+    case EngineID::STARTING:   engine_ptr.ptr = std::make_unique<chess::StartingEngine>(); break;
+    case EngineID::PHASE:      engine_ptr.ptr = std::make_unique<chess::PhaseEngine>(); break;
+    case EngineID::LAZY:       engine_ptr.ptr = std::make_unique<chess::LazyEngine>(); break;
+    case EngineID::CHECK:      engine_ptr.ptr = std::make_unique<chess::CheckEngine>(); break;
+    case EngineID::LMR:        engine_ptr.ptr = std::make_unique<chess::LMREngine>(); break;
+    case EngineID::SEE:        engine_ptr.ptr = std::make_unique<chess::SEEEngine>(); break;
+    case EngineID::NULL_MOVE:  engine_ptr.ptr = std::make_unique<chess::NullEngine>(); break;
+    case EngineID::TUNE:       engine_ptr.ptr = std::make_unique<chess::TuneEngine>(); break;
+    case EngineID::PASSED:     engine_ptr.ptr = std::make_unique<chess::PassedEngine>(); break;
+    case EngineID::TUNEDPST:   engine_ptr.ptr = std::make_unique<chess::TunedPSTEngine>(); break;
+    case EngineID::BETTEREVAL: engine_ptr.ptr = std::make_unique<chess::BetterEvalEngine>(); break;
     }
 
     return engine_ptr;
@@ -81,22 +84,22 @@ EngineID get_engine_id(std::string_view sv) {
                   return !std::isspace(ch);
               }));
     std::unordered_map<std::string_view, EngineID> map = {
-        {"curr",      EngineID::CURR     },
-        {"rng",       EngineID::RNG      },
-        {"start",     EngineID::STARTING },
-        {"phase",     EngineID::PHASE    },
-        {"lazy",      EngineID::LAZY     },
-        {"check",     EngineID::CHECK    },
-        {"lmr",       EngineID::LMR      },
-        {"see",       EngineID::SEE      },
-        {"null",      EngineID::NULL_MOVE},
-        {"tune",      EngineID::TUNE     },
-        {"passed",    EngineID::PASSED   },
-        {"tuned-pst", EngineID::TUNEDPST },
+        {"curr",        EngineID::CURR      },
+        {"rng",         EngineID::RNG       },
+        {"start",       EngineID::STARTING  },
+        {"phase",       EngineID::PHASE     },
+        {"lazy",        EngineID::LAZY      },
+        {"check",       EngineID::CHECK     },
+        {"lmr",         EngineID::LMR       },
+        {"see",         EngineID::SEE       },
+        {"null",        EngineID::NULL_MOVE },
+        {"tune",        EngineID::TUNE      },
+        {"passed",      EngineID::PASSED    },
+        {"tuned-pst",   EngineID::TUNEDPST  },
+        {"better-eval", EngineID::BETTEREVAL},
     };
     auto it = map.find(str);
-    if (it == map.end())
-        return EngineID::NONE;
+    if (it == map.end()) return EngineID::NONE;
     return it->second;
 }
 
@@ -133,9 +136,7 @@ GameResult run_game(
             done_moves.push_back(move);
         }
         if (failed) {
-            for (std::size_t i = done_moves.size(); i-- > 0;) {
-                engine1.undo_move(done_moves[i]);
-            }
+            for (std::size_t i = done_moves.size(); i-- > 0;) { engine1.undo_move(done_moves[i]); }
             done_moves.clear();
             continue;
         }
@@ -186,7 +187,8 @@ int main(int argc, char **argv) {
                   << "    - null\n"
                   << "    - tune\n"
                   << "    - passed\n"
-                  << "    - tuned-pst\n";
+                  << "    - tuned-pst\n"
+                  << "    - better-eval\n";
 
         return 0;
     }
@@ -203,8 +205,7 @@ int main(int argc, char **argv) {
         std::cerr << "Invalid engine (second engine): " << argv[2] << '\n';
         invalid_id = true;
     }
-    if (invalid_id)
-        return 1;
+    if (invalid_id) return 1;
 
     // Parse numeric arguments.
     auto parse_integer = [](const char *arg) -> unsigned long long {
@@ -213,8 +214,7 @@ int main(int argc, char **argv) {
 
         const auto value = std::stoull(str, &pos);
 
-        if (pos != str.size())
-            throw std::invalid_argument("Trailing characters");
+        if (pos != str.size()) throw std::invalid_argument("Trailing characters");
 
         return value;
     };
@@ -289,8 +289,7 @@ int main(int argc, char **argv) {
             while (true) {
                 const std::uint64_t i = next_game.fetch_add(1, std::memory_order_relaxed);
 
-                if (i >= games)
-                    break;
+                if (i >= games) break;
 
                 GameResult result = run_game(engine1, engine2, time, gen);
 
@@ -321,8 +320,7 @@ int main(int argc, char **argv) {
     }
 
     // Wait for all games to finish.
-    for (auto &worker : workers)
-        worker.join();
+    for (auto &worker : workers) worker.join();
 
     const auto final_wins1 = wins1.load();
     const auto final_wins2 = wins2.load();

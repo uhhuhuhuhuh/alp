@@ -4,9 +4,7 @@
 #include <string>
 
 chess::sqr_t chess::parse_sqr(std::string_view sv) {
-    if (sv.length() != 2) {
-        return -1;
-    }
+    if (sv.length() != 2) { return -1; }
     sqr_t sqr = 0;
     if (sv[0] >= 'a' && sv[0] <= 'h') {
         sqr += sv[0] - 'a';

@@ -51,7 +51,6 @@ if(ALP_BUILD_GUI OR ALP_BUILD_ALL)
     add_subdirectory(ui)
 endif()
 
-
 option(ALP_BUILD_CAS "Build the Compare Against Stockfish tool" OFF)
 if(ALP_BUILD_CAS OR ALP_BUILD_ALL)
     add_subdirectory(tools/cas)
@@ -66,16 +65,6 @@ endif()
 option(ALP_BUILD_CSF "Build the CSF tool" OFF)
 if(ALP_BUILD_CSF OR ALP_BUILD_ALL)
     add_subdirectory(tools/csf)
-endif()
-
-option(ALP_BUILD_PERFT "Build the Perft tool" OFF)
-if(ALP_BUILD_PERFT OR ALP_BUILD_ALL)
-    add_subdirectory(tools/perft)
-endif()
-
-option(ALP_BUILD_SEARCH "Build the Search tool" OFF)
-if(ALP_BUILD_SEARCH OR ALP_BUILD_ALL)
-    add_subdirectory(tools/search)
 endif()
 
 option(ALP_BUILD_GEN_ATK "Build the gen atk tool" OFF)

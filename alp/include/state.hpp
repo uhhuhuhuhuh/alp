@@ -26,6 +26,7 @@ class State {
     // set to ep_none if there is nothing to en passant
     sqr_t ep_sqr = ep_none;
     bb::U64 checkers = 0ULL;
+    bb::U64 pawn_ctrl = 0ULL;
     uint32_t halfmove_clock = 0;
 
     State *prev = nullptr;
@@ -50,9 +51,7 @@ class StateStack {
         std::size_t new_block_count = m_block_count + 1;
         m_total_cap += m_block_size;
         chess::State **new_blocks = new chess::State *[new_block_count];
-        for (std::size_t i = 0; i < m_block_count; ++i) {
-            new_blocks[i] = m_blocks[i];
-        }
+        for (std::size_t i = 0; i < m_block_count; ++i) { new_blocks[i] = m_blocks[i]; }
         new_blocks[new_block_count - 1] = new chess::State[m_block_size];
         delete[] m_blocks;
         m_blocks = new_blocks;
@@ -106,9 +105,7 @@ class StateStack {
     std::size_t size() const { return m_len; }
 
     chess::State &push(const chess::State &st) {
-        if (m_len >= m_total_cap) {
-            grow();
-        }
+        if (m_len >= m_total_cap) { grow(); }
         m_len++;
         return at(m_len - 1) = st;
     }

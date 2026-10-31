@@ -21,9 +21,7 @@ constexpr uint64_t constexpr_rand64(uint64_t &seed) {
 constexpr std::array<uint64_t, map_size> constexpr_get_map() {
     std::array<uint64_t, map_size> zobrist_map{};
     uint64_t seed = 1070372;
-    for (uint64_t &v : zobrist_map) {
-        v = constexpr_rand64(seed);
-    }
+    for (uint64_t &v : zobrist_map) { v = constexpr_rand64(seed); }
     return zobrist_map;
 }
 constexpr std::array<uint64_t, map_size> zobrist_map = constexpr_get_map();
@@ -49,9 +47,7 @@ inline constexpr uint64_t castle_rights(uint8_t rights) {
 }
 
 inline constexpr uint64_t ep(sqr_t ep) {
-    if (ep == State::ep_none) {
-        return 0;
-    }
+    if (ep == State::ep_none) { return 0; }
     file_t ep_file = ep % 8;
     return zobrist_map[map_ep_files_idx + ep_file];
 }
@@ -65,15 +61,11 @@ inline uint64_t get_hash(const Position &pos) {
         occ &= occ - 1;
 
         PieceType type = pos.board[i].type;
-        if (type == PieceType::none) {
-            continue;
-        }
+        if (type == PieceType::none) { continue; }
         hash ^= piece(type, pos.board[i].color, i);
     }
 
-    if (pos.st->active_color == Color::black) {
-        hash ^= side();
-    }
+    if (pos.st->active_color == Color::black) { hash ^= side(); }
 
     hash ^= castle_rights(pos.st->castle_rights);
     hash ^= ep(pos.st->ep_sqr);

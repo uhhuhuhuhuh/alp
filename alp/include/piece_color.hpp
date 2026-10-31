@@ -25,9 +25,7 @@ enum class Color : bool {
 
 // returns the opposite color.
 inline Color operator!(Color color) {
-    if (color == Color::white) {
-        return Color::black;
-    }
+    if (color == Color::white) { return Color::black; }
     return Color::white;
 }
 

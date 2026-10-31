@@ -26,9 +26,7 @@ inline bb::U64 find_magic(
     for (bb::U64 subset = mask;; subset = (subset - 1) & mask) {
         occupancies.push_back(subset);
         ray_attacks.push_back(ray(subset, sqr));
-        if (subset == 0) {
-            break;
-        }
+        if (subset == 0) { break; }
     }
 
     std::vector<bb::SeenAttackBB> attack_hist(table_size);
@@ -52,9 +50,7 @@ inline bb::U64 find_magic(
             }
         }
 
-        if (!valid) {
-            continue;
-        }
+        if (!valid) { continue; }
         for (std::size_t i = 0; i < occupancies.size(); i++) {
             bb::U64 occ = occupancies[i];
             std::size_t idx = (occ * magic) >> (64 - bit_idx);
@@ -77,26 +73,22 @@ inline bb::U64 bishop_rays(bb::U64 occ, sqr_t sqr) {
     for (rank = t_rank + 1, file = t_file + 1; rank < 8 && file < 8; rank++, file++) {
         bb::U64 at_bb = bb::bb((rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (rank = t_rank + 1, file = t_file - 1; rank < 8 && file >= 0; rank++, file--) {
         bb::U64 at_bb = bb::bb((rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (rank = t_rank - 1, file = t_file + 1; rank >= 0 && file < 8; rank--, file++) {
         bb::U64 at_bb = bb::bb((rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (rank = t_rank - 1, file = t_file - 1; rank >= 0 && file >= 0; rank--, file--) {
         bb::U64 at_bb = bb::bb((rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
 
     return rays;
@@ -113,26 +105,22 @@ inline bb::U64 rook_rays(bb::U64 occ, sqr_t sqr) {
     for (rank = t_rank + 1; rank < 8; rank++) {
         bb::U64 at_bb = bb::bb((rank * 8) + t_file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (rank = t_rank - 1; rank >= 0; rank--) {
         bb::U64 at_bb = bb::bb((rank * 8) + t_file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (file = t_file + 1; file < 8; file++) {
         bb::U64 at_bb = bb::bb((t_rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
     for (file = t_file - 1; file >= 0; file--) {
         bb::U64 at_bb = bb::bb((t_rank * 8) + file);
         rays |= at_bb;
-        if ((occ & at_bb) != 0)
-            break;
+        if ((occ & at_bb) != 0) break;
     }
 
     return rays;
@@ -152,14 +140,10 @@ inline bb::AttacksTbl<bb::bishop_attacks_size> get_bishop_attack_tbl() {
         // t stands for target
         rank_t tr = i / 8;
         file_t tf = i % 8;
-        for (r = tr + 1, f = tf + 1; r < 7 && f < 7; r++, f++)
-            mask |= bb::bb(r * 8 + f);
-        for (r = tr + 1, f = tf - 1; r < 7 && f > 0; r++, f--)
-            mask |= bb::bb(r * 8 + f);
-        for (r = tr - 1, f = tf + 1; r > 0 && f < 7; r--, f++)
-            mask |= bb::bb(r * 8 + f);
-        for (r = tr - 1, f = tf - 1; r > 0 && f > 0; r--, f--)
-            mask |= bb::bb(r * 8 + f);
+        for (r = tr + 1, f = tf + 1; r < 7 && f < 7; r++, f++) mask |= bb::bb(r * 8 + f);
+        for (r = tr + 1, f = tf - 1; r < 7 && f > 0; r++, f--) mask |= bb::bb(r * 8 + f);
+        for (r = tr - 1, f = tf + 1; r > 0 && f < 7; r--, f++) mask |= bb::bb(r * 8 + f);
+        for (r = tr - 1, f = tf - 1; r > 0 && f > 0; r--, f--) mask |= bb::bb(r * 8 + f);
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =
@@ -179,14 +163,10 @@ inline bb::AttacksTbl<bb::rook_attacks_size> get_rook_attack_tbl() {
         // t stands for target
         rank_t t_rank = i / 8;
         rank_t t_file = i % 8;
-        for (rank_t rank = t_rank + 1; rank < 7; rank++)
-            mask |= bb::bb(rank * 8 + t_file);
-        for (rank_t rank = t_rank - 1; rank > 0; rank--)
-            mask |= bb::bb(rank * 8 + t_file);
-        for (file_t file = t_file + 1; file < 7; file++)
-            mask |= bb::bb(t_rank * 8 + file);
-        for (file_t file = t_file - 1; file > 0; file--)
-            mask |= bb::bb(t_rank * 8 + file);
+        for (rank_t rank = t_rank + 1; rank < 7; rank++) mask |= bb::bb(rank * 8 + t_file);
+        for (rank_t rank = t_rank - 1; rank > 0; rank--) mask |= bb::bb(rank * 8 + t_file);
+        for (file_t file = t_file + 1; file < 7; file++) mask |= bb::bb(t_rank * 8 + file);
+        for (file_t file = t_file - 1; file > 0; file--) mask |= bb::bb(t_rank * 8 + file);
 
         attack_tbl.gmagic[i].mask = mask;
         attack_tbl.gmagic[i].magic =

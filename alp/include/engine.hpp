@@ -12,6 +12,7 @@ class IEngine {
         chess::Move best_move = Move::none();
         int32_t score = 0;
         uint16_t depth = 0;
+        uint64_t nodes = 0;
     };
 
     virtual ~IEngine() = default;
@@ -58,12 +59,12 @@ class Engine : public IEngine {
         result[PieceType::pawn].middlegame = convert_formatted_board({
             // clang-format off
             /*8*/    0,    0,    0,    0,    0,    0,    0,    0,
-            /*7*/   99,  100,  100,  100,  100,  -23,   95,  100,
-            /*6*/   75,   40,   83,  100,  100,  100,   18,   20,
-            /*5*/  -85,  -20,  -15,   10,   40,   70,   20,  -30,
-            /*4*/  -80,  -65,  -35,   40,  -30,   10,  -50,  -45,
-            /*3*/  -95,  -25,   15,    5,    0,  -45,   20,  -45,
-            /*2*/  -95,  -40,   10,  -52,  -25,  -15,   70,  -60,
+            /*7*/  100,  100,  100,  100,  100,   18,   98,  100,
+            /*6*/   75,   26,   94,  100,  100,  100,   17,   25,
+            /*5*/  -80,  -20,  -15,   10,   40,   70,   20,  -20,
+            /*4*/  -80,  -65,  -35,   40,  -30,   10,  -40,  -35,
+            /*3*/  -95,  -35,   15,    5,    0,  -45,   20,  -45,
+            /*2*/  -95,  -50,   10,  -42,  -25,  -15,   70,  -60,
             /*1*/    0,    0,    0,    0,    0,    0,    0,    0
             //       A     B     C     D     E     F     G     H
             // clang-format on
@@ -73,10 +74,10 @@ class Engine : public IEngine {
             /*8*/    0,    0,    0,    0,    0,    0,    0,    0,
             /*7*/  100,  100,  100,  100,  100,  100,  100,  100,
             /*6*/  100,  100,  100,  100,  100,  100,  100,  100,
-            /*5*/  100,  100,  100,  100,   90,   35,  100,  100,
-            /*4*/   70,  100,   80,   85,   95,   75,   75,   45,
-            /*3*/   95,   60,   65,   45,   95,   90,  100,   95,
-            /*2*/  100,   95,   70,   73,  100,   95,   30,   55,
+            /*5*/  100,  100,  100,  100,   90,   45,  100,  100,
+            /*4*/   70,  100,   80,   85,   95,   75,   65,   45,
+            /*3*/   95,   70,   65,   45,   95,   90,  100,   95,
+            /*2*/  100,   95,   70,   63,  100,   95,   30,   55,
             /*1*/    0,    0,    0,    0,    0,    0,    0,    0
             //       A     B     C     D     E     F     G     H
             // clang-format on
@@ -84,135 +85,135 @@ class Engine : public IEngine {
 
         result[PieceType::knight].middlegame = convert_formatted_board({
             // clang-format off
-            /*8*/ -100,  100,   43,  -56, -100, -100,  -99,  -46,
-            /*7*/   -1,   95,  100,  100,  100,   20,   54, -100,
-            /*6*/  100,  -43,  100,  100,  100,   77,  100,  -28,
-            /*5*/  -12,   68,   95,  100,  100,  100,   80,   65,
-            /*4*/    2,  -65,   25,   20,   23,   63,   96,  -30,
-            /*3*/ -100,  -52,  -30,  -60,   12,   10,   13,  -93,
-            /*2*/ -100, -100, -100,    3,  -18,  -75,  -96, -100,
-            /*1*/ -100, -100, -100, -100,  -99,  -63, -100,   54
+            /*8*/ -100,  100,  -11,  -59, -100,  -98, -100,  -76,
+            /*7*/  -42,   81,  100,  100,  100,   -9,   25, -100,
+            /*6*/  100,  -46,  100,  100,  100,   66,  100,  -48,
+            /*5*/  -33,   58,   85,  100,  100,  100,   80,   58,
+            /*4*/   -8,  -75,   25,   20,   23,   63,   96,  -35,
+            /*3*/ -100,  -57,  -30,  -60,   22,   10,   13,  -98,
+            /*2*/ -100, -100, -100,    3,   -8,  -81,  -98, -100,
+            /*1*/ -100, -100, -100, -100,  -99,  -46, -100,   57
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
         result[PieceType::knight].endgame = convert_formatted_board({
             // clang-format off
-            /*8*/  -62,  -99,  -74,  100,   36, -100, -100,  -39,
-            /*7*/  -93,   -9,   43,   16,   49,  100,   50,  -98,
-            /*6*/  -97,  100,   99,   75,   -8,   87,  -65, -100,
-            /*5*/  -65,  -60,  100,   49,   32,  -10,   65,  -23,
-            /*4*/ -100,  100,   80,   55,   60,  -20,  -80,  -75,
-            /*3*/    4,   45,   70,   87,  -25,  -10,  -35,   12,
-            /*2*/ -100,  -65, -100,  -70,  -48,   85,  -66,  -35,
-            /*1*/ -100, -100,  -80,  -63,  -71,  -35, -100,  -60
+            /*8*/  -63,  -95,  -64,  100,   29,  -98, -100,  -49,
+            /*7*/  -93,   -9,   28,    8,   58,  100,   70,  -98,
+            /*6*/ -100,  100,  100,   65,  -26,   97,  -77, -100,
+            /*5*/  -46,  -55,  100,   34,   27,  -10,   65,  -21,
+            /*4*/ -100,  100,   80,   55,   70,  -20,  -80,  -80,
+            /*3*/   21,   50,   60,   82,  -25,  -10,  -35,   24,
+            /*2*/ -100,  -55, -100,  -80,  -48,   85,  -66,  -45,
+            /*1*/ -100, -100,  -68,  -43,  -58,  -35, -100,  -70
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
 
         result[PieceType::bishop].middlegame = convert_formatted_board({
             // clang-format off
-            /*8*/  -99,   69, -100, -100, -100, -100, -100, -100,
-            /*7*/  -57,    7, -100, -100,  100,  -59, -100, -100,
-            /*6*/  -99,  100,   15,  -25,   47,  100,   80,   28,
-            /*5*/   33,  100,  100,  100,   93,   17,   45,  -59,
-            /*4*/ -100,  -25,   45,   75,   65,    3,   85,  100,
-            /*3*/   60,   50,   65,   75,   40,   55,    0,  100,
-            /*2*/  -53,  -15,   15,   20,  -10,   84,   55,  -63,
-            /*1*/   25,   43,  -25,  -97,  -23,    0, -100, -100
+            /*8*/ -100,   61, -100, -100, -100, -100, -100, -100,
+            /*7*/  -66,   18,  -99, -100,  100,  -96, -100, -100,
+            /*6*/ -100,   67,  -20,  -78,   -8,  100,  -20,    8,
+            /*5*/    4,  100,  100,   70,   45,  -20,   10,  -98,
+            /*4*/ -100,  -40,    5,   50,   40,  -22,   75,  100,
+            /*3*/   40,   35,   60,   55,   30,   35,    0,  100,
+            /*2*/  -63,  -15,    3,   20,  -20,   79,   45,  -66,
+            /*1*/   39,   36,  -10,  -82,   -3,  -33, -100, -100
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
         result[PieceType::bishop].endgame = convert_formatted_board({
             // clang-format off
-            /*8*/  100,  100,   38,   22,   18,  -99,  -26, -100,
-            /*7*/  100,   85,  100,   93,  -59,  100,   47,   88,
-            /*6*/  100,  100,   -8,   99,  100,   45,   99,   13,
-            /*5*/   32,   85,   53,  100,   98,   29,    7,    7,
-            /*4*/  -70,   37,   70,  100,  -27,  100,  -44,   -6,
-            /*3*/ -100,   45,   55,  100,   75,   75,   99,   48,
-            /*2*/   60,   60,   62,   50,   95,   40,   65,  100,
-            /*1*/  -53,  -45,  -70,   25,  100, -100,  -53,  -27
+            /*8*/   99,  100,    9,   16,   -2,  -99,  -39,  -90,
+            /*7*/  100,   65,  100,   67,  -94,  100,   -8,   52,
+            /*6*/   99,  100,  -30,   99,  100,   -8,   97,   -9,
+            /*5*/   40,   41,   13,   90,  100,    9,   -8,    2,
+            /*4*/  -88,   15,   60,  100,  -52,  100,  -69,  -41,
+            /*3*/ -100,   35,   45,  100,   65,   65,   99,   48,
+            /*2*/   60,   35,   32,   30,   95,   25,   55,  100,
+            /*1*/  -63,  -33,  -45,   20,  100, -100,  -36,  -49
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
 
         result[PieceType::rook].middlegame = convert_formatted_board({
             // clang-format off
-            /*8*/   98, -100, -100,   39, -100, -100, -100,  100,
-            /*7*/   90,   97,   99,  100,  100,   99,   96,  100,
-            /*6*/   70,   10,   99,   15,  100,  100,   36,   96,
-            /*5*/ -100,  -42,   85,  -50,   -3,   62,  100,   20,
-            /*4*/  -99,   32,  -71,   85,   73,   -5,   12,  -42,
-            /*3*/  -50, -100,   -8,  -48,  -95,  -75,   85,   32,
-            /*2*/  -81,  -36,  -50, -100,  -33,    0,  -42, -100,
-            /*1*/ -100,  -40,  -50,  -45,  -20,  -40,   25, -100
+            /*8*/   99, -100, -100,  -11, -100, -100,  -99,  100,
+            /*7*/  -10,  -13,   89,   15,  100,   44,    3,  100,
+            /*6*/   18,  -30,  100,  -44,   75,   95,    8,   57,
+            /*5*/ -100,  -69,   40,  -90,  -53,   38,  100,   -8,
+            /*4*/  -99,   22,  -90,   45,   48,  -10,   15,  -57,
+            /*3*/  -40, -100,  -43,  -53,  -95,  -79,   80,   42,
+            /*2*/  -61,  -48,  -65, -100,  -48,   10,  -37, -100,
+            /*1*/ -100,  -40,  -60,  -45,  -35,  -40,   25, -100
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
         result[PieceType::rook].endgame = convert_formatted_board({
             // clang-format off
-            /*8*/  100,  100,   33,   15,   35,  -42,   60,   69,
-            /*7*/  100,   60,  100,   96,   93,  100,  100,  100,
-            /*6*/   41,   99,   28,  100,   60,  -23,    5,  100,
-            /*5*/  100,  100,   85,   70,  100,   65,   -5,  100,
-            /*4*/   85,    9,   63, -100,  -92,   15,  -97,  -10,
-            /*3*/  -10,  -26,   -5,   30,   43,   40,  -85,  -80,
-            /*2*/ -100,  -15,  -27,    0,  -77,  -72,    0,    0,
-            /*1*/  -30,  -25,   70,   20,  -20,  -20,  -30,  -20
+            /*8*/  100,  100,   -2,  -23,  -25,  -96,   49,   59,
+            /*7*/   90,   55,   25,   43,   -2,  100,  100,  100,
+            /*6*/   46,   79,   -2,   80,   25,  -62,  -10,  100,
+            /*5*/  100,  100,   75,   55,  100,   58,  -12,  100,
+            /*4*/   94,    1,   47, -100,  -97,    5,  -97,   -5,
+            /*3*/  -10,  -31,    5,   15,   28,   38,  -75,  -80,
+            /*2*/ -100,    0,  -27,   -5,  -77,  -72,  -15,   15,
+            /*1*/   10,  -15,   80,    5,  -20,   15,  -20,   15
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
 
         result[PieceType::queen].middlegame = convert_formatted_board({
             // clang-format off
-            /*8*/   54,  100,   14,  100,  100,  -99,   95,  100,
-            /*7*/  -98,  -91,   78,  100,   99,  100,  100,  100,
-            /*6*/  -77,   75,  -13,   34,  100,  100,  100,  100,
-            /*5*/   20,   74, -100,    8,   58,   70,  100,   13,
-            /*4*/ -100,   -6,  -10,   17,    8,   -2,   10,   18,
-            /*3*/   52,  -42,  -17,    0,  -45,    0,   -5,  -15,
-            /*2*/  -99,   27,  -20,  -40,    0,   10,  -16,  100,
-            /*1*/  -98, -100, -100,  -67, -100,  -98,  -62,  100
+            /*8*/   54,  100,    7,  100,  100, -100,   35,  100,
+            /*7*/  -93,  -96,   88,   86,   94,  100,  100,  100,
+            /*6*/  -92,   55,   -5,    9,   85,  100,  100,  100,
+            /*5*/   27,   84,  -99,   -1,   43,   48,  100,   10,
+            /*4*/ -100,    2,  -10,    7,   18,   -1,   10,   28,
+            /*3*/   51,  -42,  -27,  -10,  -40,    0,    5,    5,
+            /*2*/  -99,   27,  -20,  -40,    0,   31,   -5,  100,
+            /*1*/  -81, -100, -100,  -37, -100,  -99,  -25,  100
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
         result[PieceType::queen].endgame = convert_formatted_board({
             // clang-format off
-            /*8*/  -25,   24,   47,  100,  -50,  100,  -33,  -93,
-            /*7*/  100,   67,   -7,  -90,  100,   95,  100,  100,
-            /*6*/   32,  -80,  100,  100,  100,   98,   96,  100,
-            /*5*/  100,   20,   99,  100,  -20,   42,  -90,  100,
-            /*4*/  -25,  -37,   60,   98,  100,  -52,  -10,   92,
-            /*3*/   40, -100,    8,   20,   15,   25,   90,   90,
-            /*2*/  -90, -100,    0,  -10,  -15, -100,  -25, -100,
-            /*1*/  100, -100, -100,  -90,  -83, -100, -100,  -81
+            /*8*/  -10,   16,   51,  100,  -92,   97,  -28, -100,
+            /*7*/  100,   87,  -27,  -99,  100,   20,  100,  100,
+            /*6*/   60,  -66,  100,  100,  100,    7,   21,  100,
+            /*5*/  100,   20,   99,  100,   -5,   67,  -98,   90,
+            /*4*/   12,  -47,   64,  100,  100,  -52,   15,   84,
+            /*3*/   69,  -80,   53,   85,   35,   60,  100,  100,
+            /*2*/  -83, -100,   25,   40,   45, -100,   -5, -100,
+            /*1*/  100, -100,  -35,  -60,    5, -100, -100,  -51
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
 
         result[PieceType::king].middlegame = convert_formatted_board({
             // clang-format off
-            /*8*/ -100,  -92,   98,  100, -100,  -97,   61,  100,
-            /*7*/  100, -100, -100,   99, -100,  -26,  -48,  -96,
-            /*6*/  100,   89,   97,  -87,  -98,   99,    5,  -84,
-            /*5*/   99,   99,  100,  -99, -100, -100,  -96, -100,
-            /*4*/ -100,  -44,  -99, -100,   30, -100, -100, -100,
-            /*3*/ -100,   53, -100,   20,  -27, -100,  -48, -100,
-            /*2*/  -25, -100,    0,  -98,  -40,  -15,   25,   70,
-            /*1*/  -48,   80,   90,  -35,   -5,  -60,  100,   55
+            /*8*/ -100,  -94,  100,   99, -100,  -96,  -28,  100,
+            /*7*/  100, -100, -100,   99, -100,  -42,   -9,  -99,
+            /*6*/  100,  100,   99,  -61,  -97,  100,   66,  -60,
+            /*5*/  100,  100,   92, -100, -100, -100,  -94, -100,
+            /*4*/ -100,    2, -100, -100,  100, -100, -100, -100,
+            /*3*/ -100,   99,  -55,   92,   28,  -75,    7, -100,
+            /*2*/   20,  -75,   35,  -75,  -15,   20,   40,   80,
+            /*1*/  -40,   90,   90,  -15,   10,  -45,  100,   40
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
         result[PieceType::king].endgame = convert_formatted_board({
             // clang-format off
-            /*8*/  -99,  100, -100,  100,   17,  100,  100,  100,
-            /*7*/  100,   -7,   95,  100,  -17,   87,  100,   11,
-            /*6*/   78,  100,  100,  100,   66,  100,  100,    8,
-            /*5*/   70,  100,    3,   93,   73,   56,  100,  -66,
-            /*4*/ -100,   23,  -17,   21,   28,   32,   15,  -10,
-            /*3*/  -74, -100,    6,  -30,    5,  -25,  -22,  -45,
-            /*2*/  -52,   50,  -40,   40,  -20,    0,  -35, -100,
-            /*1*/ -100, -100,  -85,  -90,  -95,  -50,  -75, -100
+            /*8*/ -100,   99, -100,  100,   40,  100,  100,  100,
+            /*7*/  100,   10,   99,  100,    5,   94,  100,   19,
+            /*6*/   82,  100,  100,  100,   68,  100,  100,    7,
+            /*5*/   77,  100,    6,   98,   77,   60,  100,  -64,
+            /*4*/ -100,   28,   -9,   28,   23,   42,   18,   -6,
+            /*3*/  -73, -100,    8,  -38,    7,  -23,  -31,  -40,
+            /*2*/  -62,   52,  -40,   40,  -20,    0,  -35, -100,
+            /*1*/ -100, -100,  -85,  -80,  -95,  -45,  -85, -100
             //       A     B     C     D     E     F     G     H
             // clang-format on
         });
@@ -223,26 +224,47 @@ class Engine : public IEngine {
     struct EvalSettings {
         static constexpr int32_t king_val = 20'000;
         int32_t queen_val = 1200;
-        int32_t rook_val = 650;
-        int32_t bishop_val = 402;
-        int32_t knight_val = 429;
+        int32_t rook_val = 618;
+        int32_t bishop_val = 416;
+        int32_t knight_val = 435;
         static constexpr int32_t pawn_val = 100;
 
         int32_t blocked_penalty = 25;
-        int32_t doubled_penalty = 12;
-        int32_t isolated_penalty = 23;
+        int32_t doubled_penalty = 17;
+        int32_t isolated_penalty = 22;
         int32_t backward_penalty = 0;
 
-        int32_t passed_bonus = 60;
-        int32_t bishop_pair_bonus = 73;
+        int32_t passed_bonus = 61;
 
-        int32_t king_shield_2_bonus = 21;
-        int32_t king_shield_3_bonus = 11;
+        int32_t king_shield_2_bonus = 20;
+        int32_t king_shield_3_bonus = 12;
+
+        int32_t bishop_pair_bonus = 72;
+        int32_t returning_bishop_bonus = 86;
+        int32_t mobility_0_bishop_penalty = 7;
+        int32_t mg_bishop_mobility_multiplier = 3;
+        int32_t eg_bishop_mobility_multiplier = 3;
+        int32_t bishop_king_attackers_weight = 53;
+
+        int32_t mobility_0_rook_penalty = 0;
+        int32_t mg_rook_mobility_multiplier = 2;
+        int32_t eg_rook_mobility_multiplier = 4;
+        int32_t mg_rook_7th_bonus = 49;
+        int32_t eg_rook_7th_bonus = 23;
+        int32_t rook_full_open_file_bonus = 48;
+        int32_t rook_half_open_file_bonus = 21;
+        int32_t rook_king_attackers_weight = 16;
+
+        int32_t early_developed_queen_penalty = 11;
+        int32_t mobility_0_queen_penalty = 0;
+        int32_t mg_queen_mobility_multiplier = 1;
+        int32_t eg_queen_mobility_multiplier = 2;
+        int32_t queen_king_attackers_weight = 45;
 
         // indexed based off of pawn count
-        std::array<int32_t, 9> rook_adj = {39, 50, 45, 45, 11, 5, 2, 8, -11};
+        std::array<int32_t, 9> rook_adj = {10, 30, 27, 32, 2, 0, 1, 11, -3};
         // indexed based off of pawn count
-        std::array<int32_t, 9> knight_adj = {-50, 18, 50, -10, 4, -16, -7, 22, 34};
+        std::array<int32_t, 9> knight_adj = {-50, 19, 50, -2, 11, -11, -4, 23, 33};
 
         PieceArray<PieceSquareTables> pst = make_default_pst();
     };
@@ -272,7 +294,7 @@ class Engine : public IEngine {
     };
 
     struct SearchContext {
-        Clock::time_point deadline;
+        std::optional<Clock::time_point> deadline;
         bool stopped = false;
 
         std::array<std::array<chess::Move, SearchSettings::max_ply>, SearchSettings::max_ply> pv{};
@@ -291,7 +313,7 @@ class Engine : public IEngine {
         MovePicker(
             const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move,
             const Move &pv_move, int ply, Color side, const MoveHeuristics &heuristics,
-            const EvalSettings &eval_settings, const SearchSettings &search_settings
+            const EvalSettings &eval, const SearchSettings &search
         );
 
         bool next(Move &move);
@@ -300,8 +322,8 @@ class Engine : public IEngine {
         const Position &m_pos;
         Color m_side;
         const MoveHeuristics &m_heuristics;
-        const EvalSettings &eval_settings;
-        const SearchSettings &search_settings;
+        const EvalSettings &eval;
+        const SearchSettings &search;
 
         Move m_tt_move{};
         bool m_has_tt_move = false;
@@ -334,10 +356,10 @@ class Engine : public IEngine {
     TransposTable<64> tt;
 
   private:
-    static int32_t move_piece_value(PieceType type, const EvalSettings &eval_settings);
+    static int32_t move_piece_value(PieceType type, const EvalSettings &eval);
     static int32_t
-    static_exchange_eval(const Position &pos, const Move &move, const EvalSettings &eval_settings);
-    bool should_stop(SearchContext &ctx, const SearchSettings &search_settings);
+    static_exchange_eval(const Position &pos, const Move &move, const EvalSettings &eval);
+    bool should_stop(SearchContext &ctx, const SearchSettings &search);
     Move get_tt_move(SearchContext &ctx);
     int32_t capture_score(const Move &move);
     int32_t move_score(const Move &move, const Move &pv_move, const Move &tt_move);
@@ -345,18 +367,17 @@ class Engine : public IEngine {
     void update_pv(SearchContext &ctx, uint16_t ply, const Move &move);
     int32_t quiescence(
         int32_t alpha, int32_t beta, SearchContext &ctx, int ply, int qply,
-        const EvalSettings &eval_settings, const SearchSettings &search_settings
+        const EvalSettings &eval, const SearchSettings &search
     );
-    int32_t score_to_tt(int32_t score, uint16_t ply, const SearchSettings &search_settings);
-    int32_t score_from_tt(int32_t score, uint16_t ply, const SearchSettings &search_settings);
+    int32_t score_to_tt(int32_t score, uint16_t ply, const SearchSettings &search);
+    int32_t score_from_tt(int32_t score, uint16_t ply, const SearchSettings &search);
     int32_t negamax(
         uint16_t depth, uint16_t ply, int32_t alpha, int32_t beta, SearchContext &ctx,
-        bool prev_move_was_null, const EvalSettings &eval_settings,
-        const SearchSettings &search_settings
+        bool prev_move_was_null, const EvalSettings &eval, const SearchSettings &search
     );
     int32_t root_search(
         MoveStack<> &root_moves, uint16_t depth, SearchContext &ctx, int32_t alpha, int32_t beta,
-        Move &best_move, const EvalSettings &eval_settings, const SearchSettings &search_settings
+        Move &best_move, const EvalSettings &eval, const SearchSettings &search
     );
 
   public:
@@ -375,13 +396,14 @@ class Engine : public IEngine {
     void do_move(const Move &move) override;
     void undo_move(const Move &move) override;
 
-    int32_t evaluate(const EvalSettings &eval_settings) const;
+    int32_t evaluate(const EvalSettings &eval) const;
     int32_t evaluate() const override;
 
-    SearchResult search(
-        std::chrono::milliseconds time, const EvalSettings &eval_settings,
-        const SearchSettings &search_settings
-    );
+    SearchResult
+    search(std::chrono::milliseconds time, const EvalSettings &eval, const SearchSettings &search);
     SearchResult search(std::chrono::milliseconds time) override;
+
+    SearchResult search(uint16_t depth, const EvalSettings &eval, const SearchSettings &search);
+    SearchResult search(uint16_t depth);
 };
 } // namespace chess

@@ -77,9 +77,7 @@ class Position {
                 nodes += count;
                 undo_move(move);
             }
-            if constexpr (root) {
-                output(std::format("{}: {}", move.format(), count));
-            }
+            if constexpr (root) { output(std::format("{}: {}", move.format(), count)); }
         }
 
         return nodes;
@@ -90,9 +88,7 @@ class Position {
         const bool leaf = depth == 2;
 
         for (const Move &move : gen_legal_moves()) {
-            if (stop_token.stop_requested()) {
-                return nodes;
-            }
+            if (stop_token.stop_requested()) { return nodes; }
             if (root && depth <= 1) {
                 count = 1;
                 nodes++;
@@ -104,9 +100,7 @@ class Position {
                 nodes += count;
                 undo_move(move);
             }
-            if constexpr (root) {
-                output(std::format("{}: {}", move.format(), count));
-            }
+            if constexpr (root) { output(std::format("{}: {}", move.format(), count)); }
         }
 
         return nodes;

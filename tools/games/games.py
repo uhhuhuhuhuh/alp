@@ -1,23 +1,27 @@
 """
-Generate Texel tuning data by playing games against Stockfish.
+Generate PGN games by playing against Stockfish.
 
-Output format:
-FEN<TAB>score
+Games are saved in standard PGN format.
 
-0.0 = Black wins
-0.5 = Draw
-1.0 = White wins
+Results:
+    1-0       White wins
+    0-1       Black wins
+    1/2-1/2   Draw
 """
 
 import subprocess
 import sys
 import random
 import threading
+
+import chess
+import chess.pgn
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-OUTPUT_FILE = "texel.tsv"
+OUTPUT_FILE = "games.pgn"
 output_lock = threading.Lock()
 
 
@@ -25,12 +29,15 @@ class Worker:
     def __init__(self, helper_path: str, time_ms: int):
         self.time_ms = time_ms
         self.is_helper_white = False
+
         self.fen = START_FEN
         self.start_fen = START_FEN
-        self.positions = []
 
         self.helper = None
         self.stockfish = None
+
+        self.board = None
+        self.game = None
 
         try:
             self.helper = subprocess.Popen(
@@ -97,7 +104,7 @@ class Worker:
         result = self._readline(self.helper)
 
         if result.startswith("ERROR:"):
-            raise RuntimeError(f"Helper error: {result}")
+            raise RuntimeError(f"Alp error: {result}")
 
         return result
 
@@ -121,22 +128,46 @@ class Worker:
 
     def play_game(self):
         self.is_helper_white = random.choice([True, False])
+
         self.fen = self.set_position()
         self.start_fen = self.fen
-        self.positions = []
+
+        # Initialize the PGN game.
+        self.board = chess.Board(self.start_fen)
+        self.game = chess.pgn.Game()
+
+        # Set up custom starting positions when necessary.
+        if self.start_fen != START_FEN:
+            self.game.setup(self.board)
+
+        self.game.headers["Event"] = "Computer Game"
+        self.game.headers["Site"] = "?"
+        self.game.headers["Date"] = "????.??.??"
+        self.game.headers["Round"] = "?"
+
+        self.game.headers["White"] = "Alp" if self.is_helper_white else "Stockfish"
+
+        self.game.headers["Black"] = "Stockfish" if self.is_helper_white else "Alp"
+
+        node = self.game
 
         while True:
-            self.positions.append(self.run_helper("f"))
-
+            # Record the current position if needed.
             end = self.run_helper("e")
 
             if end != "ok":
                 if end == "mate":
-                    # Side to move is checkmated; the other side won.
+                    # Side to move is checkmated.
                     winner_is_white = self.fen.split()[1] == "b"
-                    return 1.0 if winner_is_white else 0.0
+                    score = 1.0 if winner_is_white else 0.0
+                else:
+                    score = 0.5
 
-                return 0.5
+                result = "1-0" if score == 1.0 else "0-1" if score == 0.0 else "1/2-1/2"
+
+                self.game.headers["Result"] = result
+
+                return score
 
             fields = self.fen.split()
 
@@ -145,11 +176,28 @@ class Worker:
 
             is_white_to_move = fields[1] == "w"
 
+            # Decide which engine plays.
             if is_white_to_move == self.is_helper_white:
                 move = self.run_helper(str(self.time_ms))
             else:
                 move = self.run_stockfish(self.fen)
 
+            # Convert UCI move to a chess.Move.
+            chess_move = chess.Move.from_uci(move)
+
+            # Validate the move.
+            if chess_move not in self.board.legal_moves:
+                raise RuntimeError(
+                    f"Illegal move {move} in position " f"{self.board.fen()}"
+                )
+
+            # Append the move to the PGN.
+            node = node.add_variation(chess_move)
+
+            # Update our local board.
+            self.board.push(chess_move)
+
+            # Update the helper's position.
             self.fen = self.run_helper(move)
 
     def close(self):
@@ -182,7 +230,11 @@ class Worker:
 
     @staticmethod
     def _close_pipes(process):
-        for pipe in (process.stdin, process.stdout, process.stderr):
+        for pipe in (
+            process.stdin,
+            process.stdout,
+            process.stderr,
+        ):
             if pipe is not None:
                 try:
                     pipe.close()
@@ -196,13 +248,22 @@ def run_game(index: int, helper_path: str, time_ms: int):
     try:
         score = worker.play_game()
 
-        # Each game is written as one batch to avoid interleaved output.
+        # Export the completed game as PGN.
+        exporter = chess.pgn.StringExporter(
+            headers=True,
+            variations=True,
+            comments=True,
+        )
+
+        pgn_text = worker.game.accept(exporter)
+
+        # Write each complete game atomically.
         with output_lock:
             with open(OUTPUT_FILE, "a", encoding="utf-8") as output:
-                for fen in worker.positions:
-                    output.write(f"{fen}\t{score:g}\n")
+                output.write(pgn_text)
+                output.write("\n\n")
 
-        return index, score, len(worker.positions)
+        return index, score, len(worker.board.move_stack)
 
     finally:
         worker.close()
@@ -218,49 +279,75 @@ def main():
     try:
         game_count = int(sys.argv[2])
         time_ms = int(sys.argv[3])
+
         max_workers = int(sys.argv[4]) if len(sys.argv) == 5 else min(game_count, 4)
+
     except ValueError:
-        print("game_count, time_ms, and workers must be integers.", file=sys.stderr)
+        print(
+            "game_count, time_ms, and workers must be integers.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     if game_count < 1 or time_ms < 1 or max_workers < 1:
-        print("All arguments must be positive integers.", file=sys.stderr)
+        print(
+            "All arguments must be positive integers.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     max_workers = min(max_workers, game_count)
+
     helper_path = f"{build_dir}/tools/games/games_helper"
 
+    # Clear the PGN output file.
     with open(OUTPUT_FILE, "w", encoding="utf-8"):
         pass
 
     print(f"Running {game_count} games with {max_workers} workers.")
-    print(f"Writing Texel data to {OUTPUT_FILE}")
+    print(f"Writing PGN games to {OUTPUT_FILE}")
 
     completed = 0
     failures = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(run_game, i + 1, helper_path, time_ms)
+            executor.submit(
+                run_game,
+                i + 1,
+                helper_path,
+                time_ms,
+            )
             for i in range(game_count)
         ]
 
         for future in as_completed(futures):
             try:
-                index, score, positions = future.result()
+                index, score, moves = future.result()
+
                 completed += 1
-                print(
-                    f"Game {index}/{game_count}: "
-                    f"score={score:g}, positions={positions}"
+
+                result = (
+                    "White wins"
+                    if score == 1.0
+                    else "Black wins" if score == 0.0 else "Draw"
                 )
+
+                print(f"Game {index}/{game_count}: " f"{result}, moves={moves}")
+
             except Exception as exc:
                 failures += 1
-                print(f"Game failed: {exc}", file=sys.stderr, flush=True)
+
+                print(
+                    f"Game failed: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
     print("\nResults")
     print(f"Completed: {completed}/{game_count}")
     print(f"Failures:  {failures}")
-    print(f"Dataset:   {OUTPUT_FILE}")
+    print(f"PGN:       {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

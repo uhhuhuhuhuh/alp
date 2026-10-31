@@ -39,10 +39,15 @@ struct Move {
                promotion_type == other.promotion_type;
     }
 
+    // compare everything other then the move flags
+    bool weak_cmp(const chess::Move &other) const {
+        return from == other.from && to == other.to && promotion_type == other.promotion_type;
+    }
+
+    // returns false if the move is invalid
+    // returns true if the move is valid
     bool parse_uci(std::string_view sv) {
-        if (sv.size() != 4 && sv.size() != 5) {
-            return false;
-        }
+        if (sv.size() != 4 && sv.size() != 5) { return false; }
 
         auto sqr = [](auto s) -> sqr_t {
             return (s[0] >= 'a' && s[0] <= 'h' && s[1] >= '1' && s[1] <= '8')
@@ -52,9 +57,7 @@ struct Move {
         sqr_t f = sqr(sv.substr(0, 2));
         sqr_t t = sqr(sv.substr(2, 2));
 
-        if (f < 0 || t < 0) {
-            return false;
-        }
+        if (f < 0 || t < 0) { return false; }
 
         from = f;
         to = t;
@@ -77,9 +80,7 @@ struct Move {
 
     std::string format() const {
         std::string formated = std::format("{}{}", format_sqr(from), format_sqr(to));
-        if (promotion_type == PieceType::none) {
-            return formated;
-        }
+        if (promotion_type == PieceType::none) { return formated; }
         return formated += Piece(promotion_type, Color::black).format();
     };
 };
@@ -97,16 +98,12 @@ template <std::size_t cap = 256> class MoveStack {
     MoveStack() = default;
     MoveStack(const MoveStack &other) {
         len = other.len;
-        for (std::size_t i = 0; i < len; i++) {
-            data[i] = other[i];
-        }
+        for (std::size_t i = 0; i < len; i++) { data[i] = other[i]; }
     };
 
     MoveStack &operator=(const MoveStack &other) {
         len = other.len;
-        for (std::size_t i = 0; i < len; i++) {
-            data[i] = other[i];
-        }
+        for (std::size_t i = 0; i < len; i++) { data[i] = other[i]; }
         return *this;
     };
 

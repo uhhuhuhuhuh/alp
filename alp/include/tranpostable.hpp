@@ -32,9 +32,7 @@ template <uint8_t size_mb> class TransposTable {
         constexpr std::size_t bytes = static_cast<std::size_t>(size_mb) * 1'000'000;
 
         std::size_t capacity = 1;
-        while ((capacity * 2) * sizeof(TTbucket) <= bytes) {
-            capacity *= 2;
-        }
+        while ((capacity * 2) * sizeof(TTbucket) <= bytes) { capacity *= 2; }
 
         return capacity;
     }
@@ -53,9 +51,7 @@ template <uint8_t size_mb> class TransposTable {
         TTbucket &bucket = m_buckets[index];
 
         for (TTentry &entry : bucket.data) {
-            if (entry.key == hash) {
-                return &entry;
-            }
+            if (entry.key == hash) { return &entry; }
         }
 
         return nullptr;
@@ -67,9 +63,7 @@ template <uint8_t size_mb> class TransposTable {
         const std::size_t index = hash & (m_capacity - 1);
         const TTbucket &bucket = m_buckets[index];
         for (const TTentry &entry : bucket.data) {
-            if (entry.key == hash) {
-                return &entry;
-            }
+            if (entry.key == hash) { return &entry; }
         }
 
         return nullptr;
@@ -98,9 +92,7 @@ template <uint8_t size_mb> class TransposTable {
 
         TTentry *replacement = &bucket.data[0];
         for (TTentry &entry : bucket.data) {
-            if (entry.depth < replacement->depth) {
-                replacement = &entry;
-            }
+            if (entry.depth < replacement->depth) { replacement = &entry; }
         }
         *replacement = value;
         return replacement;

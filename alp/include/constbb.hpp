@@ -35,6 +35,19 @@ constexpr std::array<U64, 8> ranks = {
     0xFF00000000000000ULL
 };
 
+constexpr auto rel_ranks = []{
+    ColorArray<std::array<U64, 8>> rel_ranks{};
+
+    for (Color color : {Color::white, Color::black}) {
+        for (std::size_t i = 0; i < ranks.size(); i ++) {
+            std::size_t idx = color == Color::white ? i : ranks.size() - 1 - i;
+            rel_ranks[color][i] = ranks[idx];
+        }
+    }
+
+    return rel_ranks;
+}();
+
 constexpr U64 light_sqrs()  {return 0x55AA55AA55AA55AAULL;}
 constexpr U64 dark_sqrs() {return ~light_sqrs();}
 
@@ -196,6 +209,7 @@ constexpr auto king_attacks = get_attacks(
         std::array<int, 2>{-1, -1}
 }
 );
+constexpr auto near_sqrs = king_attacks;
 
 struct SeenAttackBB {
     U64 attack = 0ULL;

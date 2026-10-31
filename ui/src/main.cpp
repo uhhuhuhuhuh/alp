@@ -1,3 +1,4 @@
+#include "bitboard.hpp"
 #include "engine.hpp"
 #include "fen_pos.hpp"
 #include "piece_color.hpp"
@@ -64,9 +65,7 @@ class Frame : public wxFrame {
   private:
     void handle_game_end(chess::GameEnd game_end) {
         m_game_end = game_end;
-        if (game_end == chess::GameEnd::proceed) {
-            return;
-        }
+        if (game_end == chess::GameEnd::proceed) { return; }
         m_engine.moves.clear();
         std::string message, caption;
         switch (game_end) {
@@ -108,9 +107,7 @@ class Frame : public wxFrame {
     }
 
     void parse_fen(std::string_view fen) {
-        if (!handle_fen_parse_err(m_engine.parse_fen(fen))) {
-            return;
-        }
+        if (!handle_fen_parse_err(m_engine.parse_fen(fen))) { return; }
         const auto &moves = m_engine.gen_legal_moves();
         m_board->clear_selection();
         m_board->Refresh();
@@ -124,9 +121,7 @@ class Frame : public wxFrame {
     void run_tests(wxCommandEvent &) {
         TestDialog dialog(this);
         auto test_results = run_perft_tests();
-        for (const auto &result : test_results) {
-            dialog.add_test_result(result);
-        }
+        for (const auto &result : test_results) { dialog.add_test_result(result); }
         dialog.ShowModal();
     }
 
@@ -166,15 +161,13 @@ class Frame : public wxFrame {
     }
 
     void engine_move(wxCommandEvent &) {
-        if (m_game_end != chess::GameEnd::proceed) {
-            return;
-        }
+        if (m_game_end != chess::GameEnd::proceed) { return; }
         m_board->clear_selection();
         m_board->Refresh();
         using namespace std::chrono_literals;
         auto results = m_engine.search(1000ms);
         do_move(results.best_move);
-        std::cout << "Depth Went: " << results.depth << '\n';
+        std::cout << "Depth Went: " << results.depth << ", Nodes: " << results.nodes << '\n';
     }
 
     void OnPaint(wxPaintEvent &) {

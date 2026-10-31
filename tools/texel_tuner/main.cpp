@@ -9,7 +9,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -105,7 +104,7 @@ struct Progress {
         for (std::size_t i = 0; i < bar_width; ++i) std::cout << (i < filled ? '#' : '-');
 
         std::cout << "] " << std::fixed << std::setprecision(1) << std::setw(5) << percent << "% "
-                  << '(' << completed << '/' << total << ')' << " | Loss " << std::setprecision(8)
+                  << '(' << completed << '/' << total << ')' << " | Loss " << std::setprecision(10)
                   << loss << " | Elapsed " << format_time(elapsed) << " | Pass ETA "
                   << format_time(eta) << std::flush;
     }
@@ -186,79 +185,19 @@ double calculate_loss(
     return total_squared_error / static_cast<double>(samples.size());
 }
 
-void print_score_by_centipawns(
-    chess::Engine &engine, const std::vector<Sample> &samples, const Settings &settings
-) {
-    constexpr int bin_width = 50;
-    constexpr std::size_t min_samples = 20;
-
-    struct Bin {
-        std::size_t count = 0;
-        double total_eval = 0.0;
-        double total_result = 0.0;
-        double total_prediction = 0.0;
-    };
-
-    std::map<int, Bin> bins;
-
-    for (const auto &sample : samples) {
-        const auto parse_error = engine.parse_fen(sample.fen);
-
-        if (parse_error != chess::Position::FenParseErr::ok) {
-            throw std::runtime_error("Failed to parse FEN: " + sample.fen);
-        }
-
-        double evaluation = engine.evaluate(settings);
-
-        // Convert to White's perspective, matching calculate_loss().
-        if (engine.pos.st->active_color == chess::Color::black) { evaluation = -evaluation; }
-
-        const int bin = static_cast<int>(std::floor(evaluation / bin_width));
-
-        auto &b = bins[bin];
-
-        ++b.count;
-        b.total_eval += evaluation;
-        b.total_result += sample.result;
-        b.total_prediction += predict_white_score(evaluation);
-    }
-
-    std::cout << "\nAverage score by centipawn range\n";
-    std::cout << "K = " << kScalingFactor << '\n';
-
-    std::cout << std::left << std::setw(19) << "Eval range" << std::right << std::setw(9) << "Count"
-              << std::setw(12) << "Mean cp" << std::setw(15) << "Actual score" << std::setw(18)
-              << "Predicted score" << '\n';
-
-    for (const auto &[index, b] : bins) {
-        if (b.count < min_samples) { continue; }
-
-        const int low = index * bin_width;
-        const int high = low + bin_width;
-
-        const double n = static_cast<double>(b.count);
-        const double mean_eval = b.total_eval / n;
-        const double actual = b.total_result / n;
-        const double predicted = b.total_prediction / n;
-
-        std::ostringstream range;
-        range << '[' << low << ", " << high << ']';
-
-        std::cout << std::left << std::setw(19) << range.str() << std::right << std::setw(9)
-                  << b.count << std::setw(12) << std::fixed << std::setprecision(1) << mean_eval
-                  << std::setw(15) << std::setprecision(4) << actual << std::setw(18) << predicted
-                  << '\n';
-    }
-
-    std::cout << "\nActual score = wins + 0.5 * draws, divided by games.\n"
-              << "Predicted score = mean logistic prediction per position.\n";
-}
+struct Range {
+    int32_t min = 0;
+    int32_t max = 0;
+    Range() = default;
+    Range(int32_t min, int32_t max) : min(min), max(max) {}
+};
 
 struct Parameter {
     std::string name;
     int32_t Settings::*member = nullptr;
-    int32_t minimum = 0;
-    int32_t maximum = 0;
+    Range range;
+
+    bool new_paragraph = false;
 
     std::optional<std::size_t> rook_adj_idx{};
     std::optional<std::size_t> knight_adj_idx{};
@@ -268,22 +207,74 @@ struct Parameter {
     bool pst_endgame = false;
 };
 
-const std::array<Parameter, 12> kBaseParameters{
+const std::array<Parameter, 24> kBaseParameters{
     {
-     {"queen_val", &Settings::queen_val, 700, 1200},
-     {"rook_val", &Settings::rook_val, 350, 700},
-     {"bishop_val", &Settings::bishop_val, 150, 450},
-     {"knight_val", &Settings::knight_val, 150, 450},
+     {.name = "queen_val", .member = &Settings::queen_val, .range = {700, 1200}},
+     {.name = "rook_val", .member = &Settings::rook_val, .range = {350, 700}},
+     {.name = "bishop_val", .member = &Settings::bishop_val, .range = {150, 450}},
+     {.name = "knight_val", .member = &Settings::knight_val, .range = {150, 450}},
 
-     {"blocked_penalty", &Settings::blocked_penalty, 0, 150},
-     {"doubled_penalty", &Settings::doubled_penalty, 0, 150},
-     {"isolated_penalty", &Settings::isolated_penalty, 0, 150},
-     {"backward_penalty", &Settings::backward_penalty, 0, 150},
+     {.name = "blocked_penalty",
+         .member = &Settings::blocked_penalty,
+         .range = {0, 150},
+         .new_paragraph = true},
+     {.name = "doubled_penalty", .member = &Settings::doubled_penalty, .range = {0, 150}},
+     {.name = "isolated_penalty", .member = &Settings::isolated_penalty, .range = {0, 150}},
+     {.name = "backward_penalty", .member = &Settings::backward_penalty, .range = {0, 150}},
 
-     {"passed_bonus", &Settings::passed_bonus, 0, 150},
-     {"bishop_pair_bonus", &Settings::bishop_pair_bonus, 0, 150},
-     {"king_shield_2_bonus", &Settings::king_shield_2_bonus, 0, 150},
-     {"king_shield_3_bonus", &Settings::king_shield_3_bonus, 0, 150},
+     {.name = "passed_bonus",
+         .member = &Settings::passed_bonus,
+         .range = {0, 150},
+         .new_paragraph = true},
+
+     {.name = "king_shield_2_bonus",
+         .member = &Settings::king_shield_2_bonus,
+         .range = {0, 150},
+         .new_paragraph = true},
+     {.name = "king_shield_3_bonus",
+         .member = &Settings::king_shield_3_bonus,
+         .range = {0, 150}},
+
+     {.name = "bishop_pair_bonus",
+         .member = &Settings::bishop_pair_bonus,
+         .range = {0, 150},
+         .new_paragraph = true},
+     {.name = "returning_bishop_bonus",
+         .member = &Settings::returning_bishop_bonus,
+         .range = {0, 150}},
+     {.name = "mobility_0_bishop_penalty",
+         .member = &Settings::mobility_0_bishop_penalty,
+         .range = {0, 50}},
+     {.name = "bishop_king_attackers_weight",
+         .member = &Settings::bishop_king_attackers_weight,
+         .range = {0, 100}},
+
+     {.name = "mobility_0_rook_penalty",
+         .member = &Settings::mobility_0_rook_penalty,
+         .range = {0, 50},
+         .new_paragraph = true},
+     {.name = "mg_rook_7th_bonus", .member = &Settings::mg_rook_7th_bonus, .range = {0, 50}},
+     {.name = "eg_rook_7th_bonus", .member = &Settings::eg_rook_7th_bonus, .range = {0, 50}},
+     {.name = "rook_full_open_file_bonus",
+         .member = &Settings::rook_full_open_file_bonus,
+         .range = {0, 50}},
+     {.name = "rook_half_open_file_bonus",
+         .member = &Settings::rook_half_open_file_bonus,
+         .range = {0, 50}},
+     {.name = "rook_king_attackers_weight",
+         .member = &Settings::rook_king_attackers_weight,
+         .range = {0, 100}},
+
+     {.name = "early_developed_queen_penalty",
+         .member = &Settings::early_developed_queen_penalty,
+         .range = {0, 150},
+         .new_paragraph = true},
+     {.name = "mobility_0_queen_penalty",
+         .member = &Settings::mobility_0_queen_penalty,
+         .range = {0, 50}},
+     {.name = "queen_king_attackers_weight",
+         .member = &Settings::queen_king_attackers_weight,
+         .range = {0, 100}},
      }
 };
 
@@ -353,15 +344,15 @@ std::vector<Parameter> make_parameters() {
     for (std::size_t i = 0; i < adj_size; ++i) {
         Parameter rook{};
         rook.name = "rook_adj[" + std::to_string(i) + "]";
-        rook.minimum = adj_min;
-        rook.maximum = adj_max;
+        rook.range.min = adj_min;
+        rook.range.max = adj_max;
         rook.rook_adj_idx = i;
         parameters.push_back(rook);
 
         Parameter knight{};
         knight.name = "knight_adj[" + std::to_string(i) + "]";
-        knight.minimum = adj_min;
-        knight.maximum = adj_max;
+        knight.range.min = adj_min;
+        knight.range.max = adj_max;
         knight.knight_adj_idx = i;
         parameters.push_back(knight);
     }
@@ -380,8 +371,8 @@ std::vector<Parameter> make_parameters() {
                     std::to_string(square)
                 );
 
-                parameter.minimum = -100;
-                parameter.maximum = 100;
+                parameter.range.min = -100;
+                parameter.range.max = 100;
                 parameter.pst_piece = piece;
                 parameter.pst_square = square;
                 parameter.pst_endgame = endgame;
@@ -407,7 +398,7 @@ bool optimize_parameters(
 
         for (const int sign : {-1, 1}) {
             const int32_t candidate = original_value + sign * step;
-            if (candidate < parameter.minimum || candidate > parameter.maximum) { continue; }
+            if (candidate < parameter.range.min || candidate > parameter.range.max) { continue; }
 
             set_parameter_value(settings, parameter, candidate);
 
@@ -450,6 +441,7 @@ void print_settings(const Settings &settings, double final_loss) {
     std::cout << "int32_t pawn_val = " << settings.pawn_val << '\n';
 
     for (const auto &parameter : kBaseParameters) {
+        if (parameter.new_paragraph) { std::cout << '\n'; }
         std::cout << "int32_t " << parameter.name << " = "
                   << get_parameter_value(settings, parameter) << '\n';
     }
@@ -524,9 +516,8 @@ int main(int argc, char **argv) {
         double best_loss = calculate_loss(engine, samples, settings);
 
         std::cout << "Positions: " << samples.size() << '\n';
-        std::cout << std::setprecision(8);
+        std::cout << std::setprecision(10);
         std::cout << "Initial loss: " << best_loss << '\n';
-        print_score_by_centipawns(engine, samples, settings);
 
         constexpr std::array<int, 6> kStepSizes{50, 25, 10, 5, 2, 1};
 
@@ -552,7 +543,7 @@ int main(int argc, char **argv) {
                 kStepSizes.size()
             );
 
-            std::cout << "Finished step size " << step << ". Best loss: " << std::setprecision(8)
+            std::cout << "Finished step size " << step << ". Best loss: " << std::setprecision(10)
                       << best_loss << "\n";
         }
 
