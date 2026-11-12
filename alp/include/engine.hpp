@@ -6,33 +6,7 @@
 #include <array>
 
 namespace chess {
-class IEngine {
-  public:
-    struct SearchResult {
-        chess::Move best_move = Move::none();
-        int32_t score = 0;
-        uint16_t depth = 0;
-        uint64_t nodes = 0;
-    };
-
-    virtual ~IEngine() = default;
-
-    virtual Position::FenParseErr parse_fen(std::string_view fen) = 0;
-
-    virtual Position &position() = 0;
-    virtual const Position &position() const = 0;
-
-    virtual const MoveStack<> &gen_legal_moves() = 0;
-
-    virtual void do_move(const Move &move) = 0;
-    virtual void undo_move(const Move &move) = 0;
-
-    virtual int32_t evaluate() const = 0;
-
-    virtual SearchResult search(std::chrono::milliseconds time) = 0;
-};
-
-class Engine : public IEngine {
+class Engine {
   public:
     using PhasePST = std::array<int16_t, 64>;
     struct PieceSquareTables {
@@ -282,6 +256,7 @@ class Engine : public IEngine {
 
         static constexpr int32_t max_killer_ply = 256;
         static constexpr int32_t history_size = 64 * 64;
+        int32_t history_max = 16384;
     };
     static constexpr SearchSettings get_default_search_settings() { return SearchSettings{}; }
 
@@ -291,17 +266,20 @@ class Engine : public IEngine {
     struct MoveHeuristics {
         std::array<std::array<Move, 2>, SearchSettings::max_killer_ply> killers{};
         ColorArray<std::array<int32_t, SearchSettings::history_size>> history{};
+        std::array<Move, SearchSettings::history_size> counter_history{};
     };
 
     struct SearchContext {
         std::optional<Clock::time_point> deadline;
         bool stopped = false;
 
+        Move prev_move = Move::none();
+
         std::array<std::array<chess::Move, SearchSettings::max_ply>, SearchSettings::max_ply> pv{};
-        std::array<int, SearchSettings::max_ply> pv_length{};
+        std::array<std::size_t, SearchSettings::max_ply> pv_length{};
 
         std::array<Move, SearchSettings::max_ply> prev_pv{};
-        int prev_pv_length = 0;
+        std::size_t prev_pv_length = 0;
 
         MoveHeuristics heuristics;
 
@@ -312,8 +290,8 @@ class Engine : public IEngine {
       public:
         MovePicker(
             const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move,
-            const Move &pv_move, int ply, Color side, const MoveHeuristics &heuristics,
-            const EvalSettings &eval, const SearchSettings &search
+            const Move &pv_move, const Move &prev_move, int ply, Color side,
+            const MoveHeuristics &heuristics, const EvalSettings &eval, const SearchSettings &search
         );
 
         bool next(Move &move);
@@ -325,22 +303,43 @@ class Engine : public IEngine {
         const EvalSettings &eval;
         const SearchSettings &search;
 
-        Move m_tt_move{};
+        enum class Stage {
+            tt,
+            pv,
+            good,
+            queen_promo,
+            counter,
+            killers,
+            quiets,
+            under_promo,
+            bad,
+            done
+        };
+        Stage stage;
+
+        Move m_tt_move = Move::none();
         bool m_has_tt_move = false;
 
-        Move m_pv_move{};
+        Move m_pv_move = Move::none();
         bool m_has_pv_move = false;
         bool m_pv_move_pending = false;
 
-        MoveStack<64> m_good_captures;
-        MoveStack<64> m_killers;
-        MoveStack<128> m_quiets;
-        MoveStack<64> m_bad_captures;
+        Move m_counter_move = Move::none();
+        bool m_has_counter_move = false;
+        bool m_counter_move_pending = false;
 
-        std::size_t m_good_index = 0;
-        std::size_t m_killer_index = 0;
-        std::size_t m_quiet_index = 0;
-        std::size_t m_bad_index = 0;
+        MoveStack<Move, 64> m_captures;
+        std::size_t m_captures_idx = 0;
+        MoveStack<Move, 8> m_queen_promos;
+        std::size_t m_queen_promo_idx = 0;
+        MoveStack<Move, 64> m_killers;
+        std::size_t m_killer_idx = 0;
+        MoveStack<Move, 128> m_quiets;
+        std::size_t m_quiet_idx = 0;
+        MoveStack<Move, 8> m_under_promos;
+        std::size_t m_under_promo_idx = 0;
+        MoveStack<Move, 32> m_bad_captures;
+        std::size_t m_bad_idx = 0;
 
         bool contains(const MoveStack<> &moves, const Move &target);
 
@@ -386,22 +385,29 @@ class Engine : public IEngine {
 
     void operator=(const Engine &) = delete;
 
-    Position::FenParseErr parse_fen(std::string_view fen) override;
+    Position::FenParseErr parse_fen(std::string_view fen);
 
-    virtual Position &position() override;
-    const Position &position() const override;
+    virtual Position &position();
+    const Position &position() const;
 
-    const MoveStack<> &gen_legal_moves() override;
+    const MoveStack<> &gen_legal_moves();
 
-    void do_move(const Move &move) override;
-    void undo_move(const Move &move) override;
+    void do_move(const Move &move);
+    void undo_move(const Move &move);
 
     int32_t evaluate(const EvalSettings &eval) const;
-    int32_t evaluate() const override;
+    int32_t evaluate() const;
+
+    struct SearchResult {
+        chess::Move best_move = Move::none();
+        int32_t score = 0;
+        uint16_t depth = 0;
+        uint64_t nodes = 0;
+    };
 
     SearchResult
     search(std::chrono::milliseconds time, const EvalSettings &eval, const SearchSettings &search);
-    SearchResult search(std::chrono::milliseconds time) override;
+    SearchResult search(std::chrono::milliseconds time);
 
     SearchResult search(uint16_t depth, const EvalSettings &eval, const SearchSettings &search);
     SearchResult search(uint16_t depth);

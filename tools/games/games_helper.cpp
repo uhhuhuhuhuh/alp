@@ -8,7 +8,6 @@
 #include <optional>
 #include <random>
 #include <string>
-#include <vector>
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -63,7 +62,7 @@ std::string process_request(chess::Engine &engine, const std::string &arg) {
         return engine.pos.format_as_fen();
     }
 
-    return engine.search(std::chrono::milliseconds(time_ms)).best_move.format();
+    return engine.search(std::chrono::milliseconds(time_ms)).best_move.format_uci();
 }
 
 int main() {

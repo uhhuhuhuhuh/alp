@@ -195,7 +195,7 @@ static int32_t king_shield(const Position &pos, Color color, const Engine::EvalS
     int32_t score = 0;
     Piece pawn(PieceType::pawn, Color::white);
 
-    file_t king_file = lsb(pos.bb.get(PieceType::king)[Color::white]) % 8;
+    file_t king_file = lsb(pos.bb.get(PieceType::king)[color]) % 8;
     rank_t start_pawn_rank = color == Color::white ? 1 : 6;
     rank_t push_pawn_rank = color == Color::white ? 2 : 5;
     std::array<file_t, 3> files;
@@ -444,7 +444,7 @@ bool chess::Engine::should_stop(SearchContext &ctx, const SearchSettings &search
     assert(search.time_check_interval > 0);
     if ((ctx.nodes % search.time_check_interval) != 0) return false;
 
-    if (Clock::now() >= *ctx.deadline) {
+    if (ctx.deadline.has_value() && Clock::now() >= *ctx.deadline) {
         ctx.stopped = true;
         return true;
     }
@@ -644,102 +644,146 @@ int32_t chess::Engine::static_exchange_eval(
 
 chess::Engine::MovePicker::MovePicker(
     const Position &pos, const MoveStack<> &legal_moves, const Move &tt_move, const Move &pv_move,
-    int ply, Color side, const MoveHeuristics &heuristics, const EvalSettings &eval,
-    const SearchSettings &search
+    const Move &prev_move, int ply, Color side, const MoveHeuristics &heuristics,
+    const EvalSettings &eval, const SearchSettings &search
 )
-    : m_pos(pos), m_side(side), m_heuristics(heuristics), m_quiet_index(0), eval(eval),
-      search(search) {
+    : m_pos(pos), m_side(side), m_heuristics(heuristics), m_quiet_idx(0), eval(eval),
+      search(search), stage(Stage::tt) {
     if (contains(legal_moves, tt_move)) {
         m_tt_move = tt_move;
         m_has_tt_move = true;
     }
 
-    if (contains(legal_moves, pv_move) && (!m_has_tt_move || !(pv_move == m_tt_move))) {
+    if (contains(legal_moves, pv_move) && (!m_has_tt_move || pv_move != m_tt_move)) {
         m_pv_move = pv_move;
         m_has_pv_move = true;
         m_pv_move_pending = true;
     }
 
+    if (prev_move != Move::none()) {
+        const Move &counter_move = heuristics.counter_history[move_history_index(prev_move)];
+        if (counter_move != Move::none() && (!m_has_tt_move || counter_move != m_tt_move) &&
+            (!m_has_pv_move || counter_move != m_pv_move) && contains(legal_moves, counter_move)) {
+            m_counter_move = counter_move;
+            m_has_counter_move = true;
+            m_counter_move_pending = true;
+        }
+    }
+
     for (const Move &move : legal_moves) {
         if (m_has_tt_move && move == m_tt_move) continue;
-
         if (m_has_pv_move && move == m_pv_move) continue;
+        if (m_has_counter_move && move == m_counter_move) continue;
 
         if (move.promotion_type != PieceType::none) {
-            m_good_captures.push(move);
+            if (move.promotion_type == PieceType::queen) {
+                m_queen_promos.push(move);
+            } else {
+                m_under_promos.push(move);
+            }
             continue;
         }
 
         if (is_capture(move)) {
-            if (capture_order_score(move) >= 0) m_good_captures.push(move);
-            else
-                m_bad_captures.push(move);
+            m_captures.push(move);
             continue;
         }
 
         bool is_killer = false;
-
         if (ply >= 0 && ply < search.max_killer_ply && is_quiet(move)) {
             for (const Move &killer : m_heuristics.killers[ply]) {
-                if (killer == move) {
-                    m_killers.push(move);
-                    is_killer = true;
-                    break;
-                }
+                if (killer != move) { continue; }
+                m_killers.push(move);
+                is_killer = true;
+                break;
             }
         }
 
         if (!is_killer) m_quiets.push(move);
     }
 
-    std::sort(m_good_captures.begin(), m_good_captures.end(), [&](const Move &a, const Move &b) {
-        return tactical_score(a) > tactical_score(b);
-    });
-
     std::sort(m_quiets.begin(), m_quiets.end(), [&](const Move &a, const Move &b) {
         return m_heuristics.history[m_side][move_history_index(a)] >
                m_heuristics.history[m_side][move_history_index(b)];
     });
-
-    std::sort(m_bad_captures.begin(), m_bad_captures.end(), [&](const Move &a, const Move &b) {
-        return tactical_score(a) > tactical_score(b);
-    });
 }
 
 bool chess::Engine::MovePicker::next(Move &move) {
-    if (m_has_tt_move) {
-        m_has_tt_move = false;
-        move = m_tt_move;
-        return true;
+    while (true) {
+        switch (stage) {
+        case Stage::tt:
+            stage = Stage::pv;
+            if (m_has_tt_move) {
+                m_has_tt_move = false;
+                move = m_tt_move;
+                return true;
+            }
+            break;
+        case Stage::pv:
+            stage = Stage::good;
+            if (m_pv_move_pending) {
+                m_pv_move_pending = false;
+                move = m_pv_move;
+                return true;
+            }
+            break;
+        case Stage::good:
+            while (m_captures_idx < m_captures.size()) {
+                const Move &capture_move = m_captures[m_captures_idx++];
+                if (capture_order_score(capture_move) < 0) {
+                    m_bad_captures.push(capture_move);
+                    continue;
+                }
+                move = capture_move;
+                return true;
+            }
+            stage = Stage::queen_promo;
+            break;
+        case Stage::queen_promo:
+            if (m_queen_promo_idx < m_queen_promos.size()) {
+                move = m_queen_promos[m_queen_promo_idx++];
+                return true;
+            }
+            stage = Stage::counter;
+            break;
+        case Stage::counter:
+            stage = Stage::killers;
+            if (m_counter_move_pending) {
+                m_counter_move_pending = false;
+                move = m_counter_move;
+                return true;
+            }
+        case Stage::killers:
+            if (m_killer_idx < m_killers.size()) {
+                move = m_killers[m_killer_idx++];
+                return true;
+            }
+            stage = Stage::quiets;
+            break;
+        case Stage::quiets:
+            if (m_quiet_idx < m_quiets.size()) {
+                move = m_quiets[m_quiet_idx++];
+                return true;
+            }
+            stage = Stage::under_promo;
+            break;
+        case Stage::under_promo:
+            if (m_under_promo_idx < m_under_promos.size()) {
+                move = m_under_promos[m_under_promo_idx++];
+                return true;
+            }
+            stage = Stage::bad;
+            break;
+        case Stage::bad:
+            if (m_bad_idx < m_bad_captures.size()) {
+                move = m_bad_captures[m_bad_idx++];
+                return true;
+            }
+            stage = Stage::done;
+            break;
+        case Stage::done: return false;
+        }
     }
-
-    if (m_pv_move_pending) {
-        m_pv_move_pending = false;
-        move = m_pv_move;
-        return true;
-    }
-
-    if (m_good_index < m_good_captures.size()) {
-        move = m_good_captures[m_good_index++];
-        return true;
-    }
-
-    if (m_killer_index < m_killers.size()) {
-        move = m_killers[m_killer_index++];
-        return true;
-    }
-
-    if (!m_quiets.is_empty() && m_quiet_index < m_quiets.size()) {
-        move = m_quiets[m_quiet_index++];
-        return true;
-    }
-
-    if (m_bad_index < m_bad_captures.size()) {
-        move = m_bad_captures[m_bad_index++];
-        return true;
-    }
-
-    return false;
 }
 
 bool chess::Engine::MovePicker::contains(const MoveStack<> &moves, const Move &target) {
@@ -767,11 +811,8 @@ int chess::Engine::MovePicker::tactical_score(const Move &move) const {
 void chess::Engine::update_pv(SearchContext &ctx, uint16_t ply, const Move &move) {
     if (ply >= SearchSettings::max_ply - 1) return;
     ctx.pv[ply][0] = move;
-
-    int child_length = ctx.pv_length[ply + 1];
-
-    for (int i = 0; i < child_length; ++i) { ctx.pv[ply][i + 1] = ctx.pv[ply + 1][i]; }
-
+    std::size_t child_length = ctx.pv_length[ply + 1];
+    for (std::size_t i = 0; i < child_length; ++i) { ctx.pv[ply][i + 1] = ctx.pv[ply + 1][i]; }
     ctx.pv_length[ply] = child_length + 1;
 }
 
@@ -932,13 +973,23 @@ int32_t chess::Engine::negamax(
 
     const bool in_check = pos.st->checkers != 0;
 
+    Move prev_move = ctx.prev_move;
     MovePicker picker(
-        pos, moves, tt_move, pv_move, ply, pos.st->active_color, ctx.heuristics, eval, search
+        pos,
+        moves,
+        tt_move,
+        pv_move,
+        ctx.prev_move,
+        ply,
+        pos.st->active_color,
+        ctx.heuristics,
+        eval,
+        search
     );
 
     int32_t best = -search.inf;
     Move best_move = Move::none();
-    int move_index = 0;
+    std::size_t move_index = 0;
 
     Move move;
     while (picker.next(move)) {
@@ -946,6 +997,7 @@ int32_t chess::Engine::negamax(
 
         State st;
         pos.do_move(move, st);
+        ctx.prev_move = move;
 
         int32_t score;
         if (move_index == 1) {
@@ -967,6 +1019,7 @@ int32_t chess::Engine::negamax(
         }
 
         pos.undo_move(move);
+        ctx.prev_move = prev_move;
 
         if (ctx.stopped) return 0;
 
@@ -981,19 +1034,19 @@ int32_t chess::Engine::negamax(
         }
 
         if (alpha >= beta) {
-            if (is_quiet(move) && ply < search.max_killer_ply) {
+            const bool is_move_quiet = is_quiet(move);
+            if (is_move_quiet && ply < search.max_killer_ply) {
                 auto &killers = ctx.heuristics.killers[ply];
                 if (!(killers[0] == move)) {
                     killers[1] = killers[0];
                     killers[0] = move;
                 }
 
-                const int index = move_history_index(move);
-                const int bonus = depth * depth;
-
+                const std::size_t index = move_history_index(move);
+                int32_t bonus = depth * depth;
+                bonus = std::clamp(bonus, -search.history_max, search.history_max);
                 auto &history = ctx.heuristics.history[pos.st->active_color][index];
-                history += bonus - history * bonus / 16384;
-                history = std::clamp(history, -16384, 16384);
+                history += bonus - history * bonus / search.history_max;
             }
 
             break;
@@ -1033,22 +1086,32 @@ int32_t chess::Engine::root_search(
     if (ctx.prev_pv_length > 0) pv_move = ctx.prev_pv[0];
 
     Move tt_move = get_tt_move(ctx);
-
     MovePicker picker(
-        pos, root_moves, tt_move, pv_move, 0, pos.st->active_color, ctx.heuristics, eval, search
+        pos,
+        root_moves,
+        tt_move,
+        pv_move,
+        ctx.prev_move,
+        0,
+        pos.st->active_color,
+        ctx.heuristics,
+        eval,
+        search
     );
 
     Move move;
     while (picker.next(move)) {
-        if (Clock::now() >= *ctx.deadline) {
+        if (ctx.deadline.has_value() && Clock::now() >= *ctx.deadline) {
             ctx.stopped = true;
             return 0;
         }
 
         State st;
         pos.do_move(move, st);
+        ctx.prev_move = move;
         const int32_t score = -negamax(depth - 1, 1, -beta, -alpha, ctx, false, eval, search);
         pos.undo_move(move);
+        ctx.prev_move = Move::none();
 
         if (ctx.stopped) return 0;
 
@@ -1061,7 +1124,7 @@ int32_t chess::Engine::root_search(
             alpha = score;
 
             ctx.pv[0][0] = move;
-            for (int i = 0; i < ctx.pv_length[1]; ++i) ctx.pv[0][i + 1] = ctx.pv[1][i];
+            for (std::size_t i = 0; i < ctx.pv_length[1]; ++i) ctx.pv[0][i + 1] = ctx.pv[1][i];
             ctx.pv_length[0] = ctx.pv_length[1] + 1;
         }
 

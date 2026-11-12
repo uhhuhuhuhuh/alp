@@ -4,10 +4,10 @@
 #include <string_view>
 
 namespace chess {
-using sqr_t = int16_t;
-using rank_t = int16_t;
-using file_t = int16_t;
-using rf_t = int16_t;
+using sqr_t = int8_t;
+using rank_t = int8_t;
+using file_t = int8_t;
+using rf_t = int8_t;
 
 enum File { A, B, C, D, E, F, G, H };
 enum Rank { R1, R2, R3, R4, R5, R6, R7, R8 };

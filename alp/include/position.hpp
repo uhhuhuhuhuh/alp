@@ -77,7 +77,7 @@ class Position {
                 nodes += count;
                 undo_move(move);
             }
-            if constexpr (root) { output(std::format("{}: {}", move.format(), count)); }
+            if constexpr (root) { output(std::format("{}: {}", move.format_uci(), count)); }
         }
 
         return nodes;
@@ -100,7 +100,7 @@ class Position {
                 nodes += count;
                 undo_move(move);
             }
-            if constexpr (root) { output(std::format("{}: {}", move.format(), count)); }
+            if constexpr (root) { output(std::format("{}: {}", move.format_uci(), count)); }
         }
 
         return nodes;

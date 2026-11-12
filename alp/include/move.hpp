@@ -32,12 +32,13 @@ struct Move {
     constexpr Move(sqr_t from_, sqr_t to_, uint8_t flag_, PieceType promotion_type_)
         : from(from_), to(to_), flag(flag_), promotion_type(promotion_type_) {};
 
-    static constexpr Move none() { return Move{-1, -1, MoveFlag::quiet, PieceType::none}; };
+    static constexpr Move none() { return Move{0, 0, MoveFlag::quiet, PieceType::none}; };
 
     bool operator==(const chess::Move &other) const {
         return from == other.from && to == other.to && flag == other.flag &&
                promotion_type == other.promotion_type;
     }
+    bool operator!=(const chess::Move &other) const { return !(*this == other); }
 
     // compare everything other then the move flags
     bool weak_cmp(const chess::Move &other) const {
@@ -78,21 +79,21 @@ struct Move {
         }
     }
 
-    std::string format() const {
+    std::string format_uci() const {
         std::string formated = std::format("{}{}", format_sqr(from), format_sqr(to));
         if (promotion_type == PieceType::none) { return formated; }
         return formated += Piece(promotion_type, Color::black).format();
     };
 };
 
-template <std::size_t cap = 256> class MoveStack {
+template <typename T = Move, std::size_t cap = 256> class MoveStack {
   private:
-    Move data[cap];
+    T data[cap];
     std::size_t len = 0;
 
   public:
-    using iter = Move *;
-    using citer = const Move *;
+    using iter = T *;
+    using citer = const T *;
 
   public:
     MoveStack() = default;
@@ -107,31 +108,25 @@ template <std::size_t cap = 256> class MoveStack {
         return *this;
     };
 
-    constexpr Move &operator[](std::size_t idx) {
+    constexpr T &operator[](std::size_t idx) {
         assert(idx < len);
         return data[idx];
     }
-    constexpr const Move &operator[](std::size_t idx) const {
+    constexpr const T &operator[](std::size_t idx) const {
         assert(idx < len);
         return data[idx];
     }
 
     constexpr bool is_empty() const { return len == 0; }
 
-    void push(const Move &move) {
+    void push(const T &move) {
         assert(len < cap);
         data[len] = move;
         len++;
     }
-    void emplace(
-        sqr_t from = -1, sqr_t to = -1, uint8_t flag = MoveFlag::quiet,
-        PieceType promotion = PieceType::none
-    ) {
+    template <typename... Args> void emplace(Args &&...args) {
         assert(len < cap);
-        data[len].from = from;
-        data[len].to = to;
-        data[len].flag = flag;
-        data[len].promotion_type = promotion;
+        data[len] = T{std::forward<Args>(args)...};
         len++;
     }
     void pop() {
@@ -141,11 +136,11 @@ template <std::size_t cap = 256> class MoveStack {
 
     void clear() { len = 0; }
 
-    constexpr chess::Move &back() {
+    constexpr T &back() {
         assert(!is_empty());
         return data[len - 1];
     }
-    constexpr const chess::Move &back() const {
+    constexpr const T &back() const {
         assert(!is_empty());
         return data[len - 1];
     }

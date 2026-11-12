@@ -36,7 +36,6 @@ class ChessBoard : public wxPanel {
     static constexpr int BORDER = 16;
     using do_move_func_t = std::function<void(const chess::Move &move)>;
 
-  private:
     chess::Position &m_pos;
     chess::MoveStack<> &m_moves;
     do_move_func_t m_do_move_func;
@@ -44,6 +43,10 @@ class ChessBoard : public wxPanel {
     static inline bool s_has_set_pieces = false;
     static inline chess::PieceArray<chess::ColorArray<wxBitmap>> s_piecesx64;
     SelectedData m_selected;
+    struct {
+        chess::sqr_t from = -1;
+        chess::sqr_t to = -1;
+    } m_prev_move;
 
   private:
     void OnPaint(wxPaintEvent &);

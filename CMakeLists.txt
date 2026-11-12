@@ -56,15 +56,9 @@ if(ALP_BUILD_CAS OR ALP_BUILD_ALL)
     add_subdirectory(tools/cas)
 endif()
 
-
 option(ALP_BUILD_GAMES "Build the Games tool" OFF)
 if(ALP_BUILD_GAMES OR ALP_BUILD_ALL)
     add_subdirectory(tools/games)
-endif()
-
-option(ALP_BUILD_CSF "Build the CSF tool" OFF)
-if(ALP_BUILD_CSF OR ALP_BUILD_ALL)
-    add_subdirectory(tools/csf)
 endif()
 
 option(ALP_BUILD_GEN_ATK "Build the gen atk tool" OFF)

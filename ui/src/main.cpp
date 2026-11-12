@@ -153,9 +153,12 @@ class Frame : public wxFrame {
     }
 
     void do_move(const chess::Move &move) {
+        m_board->m_prev_move = {.from = move.from, .to = move.to};
         m_engine.do_move(move);
         const auto &moves = m_engine.gen_legal_moves();
         m_fen_txt_box->set_fen(m_engine.pos.format_as_fen());
+        m_board->clear_selection();
+        m_board->Refresh();
         Refresh();
         handle_game_end(m_engine.pos.get_game_end(moves));
     }
@@ -163,7 +166,6 @@ class Frame : public wxFrame {
     void engine_move(wxCommandEvent &) {
         if (m_game_end != chess::GameEnd::proceed) { return; }
         m_board->clear_selection();
-        m_board->Refresh();
         using namespace std::chrono_literals;
         auto results = m_engine.search(1000ms);
         do_move(results.best_move);

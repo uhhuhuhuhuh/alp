@@ -1,5 +1,6 @@
 #include "chessboard.hpp"
 
+#include "constbb.hpp"
 #include "genmoves.hpp"
 #include "piece_color.hpp"
 
@@ -52,16 +53,22 @@ void ChessBoard::OnPaint(wxPaintEvent &) {
     for (chess::rank_t drawn_rank = 0; drawn_rank < 8; drawn_rank++) {
         chess::rank_t rank = 7 - drawn_rank;
         for (chess::file_t file = 0; file < 8; file++) {
-            bool white = (rank + file) % 2 == 0;
-            dc.SetBrush(wxBrush(white ? wxColour("#e1e8f7") : wxColour("#364f80")));
+            chess::sqr_t sqr = file + rank * 8;
+            bool light = chess::bb::bb(sqr) & chess::bb::light_sqrs();
+            dc.SetBrush(wxBrush(light ? wxColour("#e1e8f7") : wxColour("#364f80")));
             dc.DrawRectangle(
                 x + file * SQUARE_SIZE, y + drawn_rank * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
             );
-            chess::sqr_t sqr = file + rank * 8;
-            chess::Piece &p = m_pos.board[sqr];
-            if (p.type == chess::PieceType::none) {
-                continue;
+
+            if (sqr == m_prev_move.from || sqr == m_prev_move.to) {
+                dc.SetBrush(wxBrush(wxColour("#28a99e80")));
+                dc.DrawRectangle(
+                    x + file * SQUARE_SIZE, y + drawn_rank * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
+                );
             }
+
+            chess::Piece &p = m_pos.board[sqr];
+            if (p.type == chess::PieceType::none) { continue; }
 
             int piece_x = x + file * SQUARE_SIZE;
             int piece_y = y + drawn_rank * SQUARE_SIZE;
@@ -70,9 +77,7 @@ void ChessBoard::OnPaint(wxPaintEvent &) {
         }
     }
 
-    if (m_selected.sqr == -1) {
-        return;
-    }
+    if (m_selected.sqr == -1) { return; }
 
     chess::rank_t rank = m_selected.sqr / 8;
     rank = 7 - rank;
@@ -144,9 +149,7 @@ void ChessBoard::OnClick(wxMouseEvent &event) {
         m_selected.sqr = sqr;
         m_selected.moves.clear();
         for (auto &move : m_moves) {
-            if (move.from == sqr) {
-                m_selected.moves.push_back(&move);
-            }
+            if (move.from == sqr) { m_selected.moves.push_back(&move); }
         }
         Refresh();
         return;
@@ -154,6 +157,7 @@ void ChessBoard::OnClick(wxMouseEvent &event) {
 
     auto *move = *move_it;
     if (move->promotion_type == chess::PieceType::none) {
+        m_prev_move = {.from = move->from, .to = move->to};
         m_do_move_func(*move);
         auto after_moves = chess::gen_moves<chess::GenType::legal>(m_pos);
         clear_selection();
@@ -167,6 +171,7 @@ void ChessBoard::OnClick(wxMouseEvent &event) {
         [this, move](chess::PieceType promotion_type) {
             chess::Move promotion_move = *move;
             promotion_move.promotion_type = promotion_type;
+            m_prev_move = {.from = promotion_move.from, .to = promotion_move.to};
             m_do_move_func(promotion_move);
             clear_selection();
             Refresh();
@@ -192,9 +197,7 @@ ChessBoard::ChessBoard(
 
     SetBackgroundColour(*wxWHITE);
 
-    if (s_has_set_pieces) {
-        return;
-    }
+    if (s_has_set_pieces) { return; }
     s_has_set_pieces = true;
 
     std::unordered_map<chess::PieceType, std::string> piece_names = {
