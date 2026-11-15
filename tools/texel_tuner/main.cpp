@@ -15,6 +15,14 @@
 #include <string>
 #include <vector>
 
+struct CachedPosition {
+    std::array<chess::Piece, 64> board;
+    chess::bb::PieceBB bb;
+    uint16_t game_ply;
+    chess::State state;
+    double result;
+};
+
 struct Sample {
     std::string fen;
     double result; // 1.0 = White wins, 0.5 = draw, 0.0 = Black wins
@@ -118,17 +126,17 @@ struct Progress {
 
 // Load positions from a TSV file containing:
 // FEN<TAB>result
-std::vector<Sample> load_samples(const std::string &path) {
+std::vector<CachedPosition> load_positions(const std::string &path, chess::Engine &engine) {
     std::ifstream file(path);
     if (!file) { throw std::runtime_error("Could not open " + path); }
 
-    std::vector<Sample> samples;
+    std::vector<CachedPosition> positions;
     std::string line;
-
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '#') { continue; }
 
         const auto tab_position = line.rfind('\t');
+
         if (tab_position == std::string::npos) {
             throw std::runtime_error("Expected FEN<TAB>result");
         }
@@ -140,49 +148,56 @@ std::vector<Sample> load_samples(const std::string &path) {
             throw std::runtime_error("Result must be between 0 and 1");
         }
 
-        samples.push_back({fen, result});
+        if (engine.parse_fen(fen) != chess::Position::FenParseErr::ok) {
+            throw std::runtime_error("Failed to parse FEN: " + fen);
+        }
+
+        positions.push_back(
+            {.board = engine.pos.board,
+             .bb = engine.pos.bb,
+             .game_ply = engine.pos.game_ply,
+             .state = *engine.pos.st,
+             .result = result}
+        );
     }
 
-    if (samples.empty()) { throw std::runtime_error("Dataset is empty"); }
+    if (positions.empty()) { throw std::runtime_error("Dataset is empty"); }
 
-    return samples;
+    return positions;
 }
 
 double predict_white_score(double evaluation) {
     constexpr double ln_10 = 2.30258509299f;
     const double exponent = -kScalingFactor * ln_10 * evaluation / 400.0;
-
     if (exponent >= 0.0) {
         const double exp_negative = std::exp(-exponent);
         return exp_negative / (1.0 + exp_negative);
     }
-
     return 1.0 / (1.0 + std::exp(exponent));
 }
 
 double calculate_loss(
-    chess::Engine &engine, const std::vector<Sample> &samples, const Settings &settings
+    chess::Engine &engine, const std::vector<CachedPosition> &positions, const Settings &settings
 ) {
     double total_squared_error = 0.0;
 
-    for (const auto &sample : samples) {
-        const auto parse_error = engine.parse_fen(sample.fen);
-
-        if (parse_error != chess::Position::FenParseErr::ok) {
-            throw std::runtime_error("Failed to parse FEN: " + sample.fen);
-        }
+    for (const auto &cached : positions) {
+        engine.pos.board = cached.board;
+        engine.pos.bb = cached.bb;
+        engine.pos.game_ply = cached.game_ply;
+        *engine.pos.st = cached.state;
+        engine.pos.st->prev = nullptr;
 
         double evaluation = engine.evaluate(settings);
-
-        if (engine.pos.st->active_color == chess::Color::black) { evaluation = -evaluation; }
+        if (cached.state.active_color == chess::Color::black) { evaluation = -evaluation; }
 
         const double prediction = predict_white_score(evaluation);
-        const double difference = prediction - sample.result;
+        const double difference = prediction - cached.result;
 
         total_squared_error += difference * difference;
     }
 
-    return total_squared_error / static_cast<double>(samples.size());
+    return total_squared_error / static_cast<double>(positions.size());
 }
 
 struct Range {
@@ -197,7 +212,7 @@ struct Parameter {
     int32_t Settings::*member = nullptr;
     Range range;
 
-    bool new_paragraph = false;
+    bool new_group = false;
 
     std::optional<std::size_t> rook_adj_idx{};
     std::optional<std::size_t> knight_adj_idx{};
@@ -207,7 +222,7 @@ struct Parameter {
     bool pst_endgame = false;
 };
 
-const std::array<Parameter, 24> kBaseParameters{
+const std::array<Parameter, 26> kBaseParameters{
     {
      {.name = "queen_val", .member = &Settings::queen_val, .range = {700, 1200}},
      {.name = "rook_val", .member = &Settings::rook_val, .range = {350, 700}},
@@ -217,7 +232,7 @@ const std::array<Parameter, 24> kBaseParameters{
      {.name = "blocked_penalty",
          .member = &Settings::blocked_penalty,
          .range = {0, 150},
-         .new_paragraph = true},
+         .new_group = true},
      {.name = "doubled_penalty", .member = &Settings::doubled_penalty, .range = {0, 150}},
      {.name = "isolated_penalty", .member = &Settings::isolated_penalty, .range = {0, 150}},
      {.name = "backward_penalty", .member = &Settings::backward_penalty, .range = {0, 150}},
@@ -225,20 +240,28 @@ const std::array<Parameter, 24> kBaseParameters{
      {.name = "passed_bonus",
          .member = &Settings::passed_bonus,
          .range = {0, 150},
-         .new_paragraph = true},
+         .new_group = true},
 
      {.name = "king_shield_2_bonus",
          .member = &Settings::king_shield_2_bonus,
          .range = {0, 150},
-         .new_paragraph = true},
+         .new_group = true},
      {.name = "king_shield_3_bonus",
          .member = &Settings::king_shield_3_bonus,
          .range = {0, 150}},
 
+     {.name = "mobility_0_knight_penalty",
+         .member = &Settings::mobility_0_knight_penalty,
+         .range = {0, 50},
+         .new_group = true},
+     {.name = "knight_king_attackers_weight",
+         .member = &Settings::knight_king_attackers_weight,
+         .range = {0, 100}},
+
      {.name = "bishop_pair_bonus",
          .member = &Settings::bishop_pair_bonus,
          .range = {0, 150},
-         .new_paragraph = true},
+         .new_group = true},
      {.name = "returning_bishop_bonus",
          .member = &Settings::returning_bishop_bonus,
          .range = {0, 150}},
@@ -252,7 +275,7 @@ const std::array<Parameter, 24> kBaseParameters{
      {.name = "mobility_0_rook_penalty",
          .member = &Settings::mobility_0_rook_penalty,
          .range = {0, 50},
-         .new_paragraph = true},
+         .new_group = true},
      {.name = "mg_rook_7th_bonus", .member = &Settings::mg_rook_7th_bonus, .range = {0, 50}},
      {.name = "eg_rook_7th_bonus", .member = &Settings::eg_rook_7th_bonus, .range = {0, 50}},
      {.name = "rook_full_open_file_bonus",
@@ -268,7 +291,7 @@ const std::array<Parameter, 24> kBaseParameters{
      {.name = "early_developed_queen_penalty",
          .member = &Settings::early_developed_queen_penalty,
          .range = {0, 150},
-         .new_paragraph = true},
+         .new_group = true},
      {.name = "mobility_0_queen_penalty",
          .member = &Settings::mobility_0_queen_penalty,
          .range = {0, 50}},
@@ -386,7 +409,7 @@ std::vector<Parameter> make_parameters() {
 }
 
 bool optimize_parameters(
-    chess::Engine &engine, const std::vector<Sample> &samples, Settings &settings,
+    chess::Engine &engine, const std::vector<CachedPosition> &positions, Settings &settings,
     const std::vector<Parameter> &parameters, double &best_loss, int step, Progress &progress
 ) {
     bool improved = false;
@@ -402,7 +425,7 @@ bool optimize_parameters(
 
             set_parameter_value(settings, parameter, candidate);
 
-            const double candidate_loss = calculate_loss(engine, samples, settings);
+            const double candidate_loss = calculate_loss(engine, positions, settings);
             if (candidate_loss < best_loss - kImprovementThreshold) {
                 best_loss = candidate_loss;
                 best_value = candidate;
@@ -420,7 +443,7 @@ bool optimize_parameters(
 }
 
 void optimize_at_step_size(
-    chess::Engine &engine, const std::vector<Sample> &samples, Settings &settings,
+    chess::Engine &engine, const std::vector<CachedPosition> &positions, Settings &settings,
     const std::vector<Parameter> &parameters, double &best_loss, int step, Progress &progress,
     std::size_t step_index, std::size_t step_count
 ) {
@@ -430,7 +453,7 @@ void optimize_at_step_size(
         ++pass;
         progress.reset(parameters.size(), step, pass, step_index, step_count, best_loss);
         improved =
-            optimize_parameters(engine, samples, settings, parameters, best_loss, step, progress);
+            optimize_parameters(engine, positions, settings, parameters, best_loss, step, progress);
         progress.finish(best_loss);
     } while (improved);
 }
@@ -441,7 +464,7 @@ void print_settings(const Settings &settings, double final_loss) {
     std::cout << "int32_t pawn_val = " << settings.pawn_val << '\n';
 
     for (const auto &parameter : kBaseParameters) {
-        if (parameter.new_paragraph) { std::cout << '\n'; }
+        if (parameter.new_group) { std::cout << '\n'; }
         std::cout << "int32_t " << parameter.name << " = "
                   << get_parameter_value(settings, parameter) << '\n';
     }
@@ -507,15 +530,14 @@ int main(int argc, char **argv) {
     try {
         const std::string dataset_path = (argc > 1) ? argv[1] : "positions.tsv";
 
-        const auto samples = load_samples(dataset_path);
-
         chess::Engine engine;
+        const auto positions = load_positions(dataset_path, engine);
         Settings settings{};
         const auto parameters = make_parameters();
 
-        double best_loss = calculate_loss(engine, samples, settings);
+        double best_loss = calculate_loss(engine, positions, settings);
 
-        std::cout << "Positions: " << samples.size() << '\n';
+        std::cout << "Positions: " << positions.size() << '\n';
         std::cout << std::setprecision(10);
         std::cout << "Initial loss: " << best_loss << '\n';
 
@@ -533,7 +555,7 @@ int main(int argc, char **argv) {
 
             optimize_at_step_size(
                 engine,
-                samples,
+                positions,
                 settings,
                 parameters,
                 best_loss,

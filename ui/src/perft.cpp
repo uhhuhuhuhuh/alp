@@ -36,9 +36,7 @@ PerftDialog::PerftDialog(wxWindow *parent, const chess::Position &position)
 
 PerftDialog::~PerftDialog() {
     m_thread.request_stop();
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
+    if (m_thread.joinable()) { m_thread.join(); }
 }
 
 void PerftDialog::run(uint8_t depth) {
@@ -51,7 +49,7 @@ void PerftDialog::run(uint8_t depth) {
             uint64_t nodes = position
                                  .perft(
                                      depth,
-                                     [this](std::string_view line) {
+                                     [this](const std::string &line) {
                                          auto *event = new wxThreadEvent(EVT_PERFT_OUTPUT);
                                          event->SetString(wxString::FromUTF8(line));
                                          wxQueueEvent(this, event);
@@ -69,9 +67,7 @@ void PerftDialog::run(uint8_t depth) {
 
 void PerftDialog::OnClose(wxCloseEvent &event) {
     m_thread.request_stop();
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
+    if (m_thread.joinable()) { m_thread.join(); }
     Destroy();
 }
 void PerftDialog::on_perft_output(wxThreadEvent &event) {

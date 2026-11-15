@@ -53,7 +53,7 @@ class Piece {
     // Piece constructor
     Piece(PieceType type_, Color color_) : type(type_), color(color_) {}
 
-    bool operator==(const Piece &other) { return type == other.type && color == other.color; }
+    bool operator==(const Piece &other) const { return type == other.type && color == other.color; }
 
     Piece(char c) {
         color = std::isupper(c) ? Color::white : Color::black;

@@ -50,27 +50,31 @@ void ChessBoard::OnPaint(wxPaintEvent &) {
     dc.SetBrush(wxColour("#010d26"));
     dc.DrawRectangle(0, 0, BOARD_SIZE + BORDER * 2, BOARD_SIZE + BORDER * 2);
 
-    for (chess::rank_t drawn_rank = 0; drawn_rank < 8; drawn_rank++) {
-        chess::rank_t rank = 7 - drawn_rank;
+    for (chess::rank_t rank = 7; rank >= 0; rank--) {
+        chess::rank_t drawn_rank = flip_persp(7 - rank);
         for (chess::file_t file = 0; file < 8; file++) {
+            chess::file_t drawn_file = flip_persp(file);
             chess::sqr_t sqr = file + rank * 8;
             bool light = chess::bb::bb(sqr) & chess::bb::light_sqrs();
             dc.SetBrush(wxBrush(light ? wxColour("#e1e8f7") : wxColour("#364f80")));
             dc.DrawRectangle(
-                x + file * SQUARE_SIZE, y + drawn_rank * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
+                x + drawn_file * SQUARE_SIZE, y + drawn_rank * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
             );
 
             if (sqr == m_prev_move.from || sqr == m_prev_move.to) {
                 dc.SetBrush(wxBrush(wxColour("#28a99e80")));
                 dc.DrawRectangle(
-                    x + file * SQUARE_SIZE, y + drawn_rank * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
+                    x + drawn_file * SQUARE_SIZE,
+                    y + drawn_rank * SQUARE_SIZE,
+                    SQUARE_SIZE,
+                    SQUARE_SIZE
                 );
             }
 
             chess::Piece &p = m_pos.board[sqr];
             if (p.type == chess::PieceType::none) { continue; }
 
-            int piece_x = x + file * SQUARE_SIZE;
+            int piece_x = x + drawn_file * SQUARE_SIZE;
             int piece_y = y + drawn_rank * SQUARE_SIZE;
 
             dc.DrawBitmap(s_piecesx64[p.type][p.color], piece_x, piece_y, true);
@@ -79,11 +83,11 @@ void ChessBoard::OnPaint(wxPaintEvent &) {
 
     if (m_selected.sqr == -1) { return; }
 
-    chess::rank_t rank = m_selected.sqr / 8;
-    rank = 7 - rank;
-    chess::file_t file = m_selected.sqr % 8;
-    int left = x + file * SQUARE_SIZE;
-    int top = y + rank * SQUARE_SIZE;
+    chess::rank_t drawn_rank = m_selected.sqr / 8;
+    drawn_rank = flip_persp(7 - drawn_rank);
+    chess::file_t drawn_file = flip_persp(m_selected.sqr % 8);
+    int left = x + drawn_file * SQUARE_SIZE;
+    int top = y + drawn_rank * SQUARE_SIZE;
 
     int selectionBorder = SQUARE_SIZE * 0.075;
 
@@ -108,8 +112,8 @@ void ChessBoard::OnPaint(wxPaintEvent &) {
 
         to_rank = 7 - to_rank;
 
-        int center_x = x + to_file * SQUARE_SIZE + SQUARE_SIZE / 2;
-        int center_y = y + to_rank * SQUARE_SIZE + SQUARE_SIZE / 2;
+        int center_x = x + flip_persp(to_file) * SQUARE_SIZE + SQUARE_SIZE / 2;
+        int center_y = y + flip_persp(to_rank) * SQUARE_SIZE + SQUARE_SIZE / 2;
         int radius = SQUARE_SIZE / 6;
 
         bool is_capture_black = m_pos.board[move_ptr->to].color == chess::Color::black &&
@@ -128,14 +132,18 @@ void ChessBoard::OnClick(wxMouseEvent &event) {
     int mouseX = event.GetX();
     int mouseY = event.GetY();
 
-    chess::file_t file = (mouseX - x) / SQUARE_SIZE;
+    chess::file_t drawn_file = (mouseX - x) / SQUARE_SIZE;
     chess::rank_t drawn_rank = (mouseY - y) / SQUARE_SIZE;
-    chess::rank_t rank = 7 - drawn_rank;
 
-    if (file < 0 || file >= 8 || drawn_rank < 0 || drawn_rank >= 8) {
+    if (drawn_file < 0 || drawn_file >= 8 || drawn_rank < 0 || drawn_rank >= 8) {
         clear_selection();
         return;
     }
+
+    drawn_rank = flip_persp(drawn_rank);
+    drawn_file = flip_persp(drawn_file);
+    chess::rank_t rank = 7 - drawn_rank;
+    chess::file_t file = drawn_file;
 
     chess::sqr_t sqr = rank * 8 + file;
 

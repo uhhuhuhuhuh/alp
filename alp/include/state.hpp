@@ -26,7 +26,6 @@ class State {
     // set to ep_none if there is nothing to en passant
     sqr_t ep_sqr = ep_none;
     bb::U64 checkers = 0ULL;
-    bb::U64 pawn_ctrl = 0ULL;
     uint32_t halfmove_clock = 0;
 
     State *prev = nullptr;

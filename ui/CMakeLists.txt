@@ -14,6 +14,7 @@ if(ALP_ENABLE_SANITIZERS)
     target_link_libraries(alp PRIVATE alp_sanitizers)
 endif()
 
+set(wxWidgets_CONFIG_OPTIONS --static=yes)
 find_package(wxWidgets QUIET COMPONENTS core base)
 
 if(wxWidgets_FOUND)
@@ -33,5 +34,5 @@ else()
     target_link_libraries(alp PRIVATE wx::core wx::base)
 endif()
 
-file(COPY "${PROJECT_SOURCE_DIR}/resources"
-     DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${PROJECT_SOURCE_DIR}/ui/resources"
+     DESTINATION "${CMAKE_BINARY_DIR}/ui/")

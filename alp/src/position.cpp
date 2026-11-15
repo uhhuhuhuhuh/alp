@@ -444,7 +444,6 @@ void chess::Position::do_move(const Move &move, State &new_st) {
     new_st.prev = st;
     new_st.ep_sqr = State::ep_none;
     new_st.checkers = 0ULL;
-    new_st.pawn_ctrl = 0ULL;
     new_st.captured_piece = board[move.to];
     new_st.active_color = !new_st.active_color;
     strip_castle_rights(*this, new_st, move.from, move.to);

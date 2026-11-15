@@ -38,17 +38,20 @@ class ChessBoard : public wxPanel {
 
     chess::Position &m_pos;
     chess::MoveStack<> &m_moves;
-    do_move_func_t m_do_move_func;
-
-    static inline bool s_has_set_pieces = false;
-    static inline chess::PieceArray<chess::ColorArray<wxBitmap>> s_piecesx64;
     SelectedData m_selected;
     struct {
         chess::sqr_t from = -1;
         chess::sqr_t to = -1;
     } m_prev_move;
+    chess::Color m_persp = chess::Color::white;
+
+    do_move_func_t m_do_move_func;
+
+    static inline bool s_has_set_pieces = false;
+    static inline chess::PieceArray<chess::ColorArray<wxBitmap>> s_piecesx64;
 
   private:
+    chess::rf_t flip_persp(chess::rf_t x) { return m_persp == chess::Color::white ? x : 7 - x; };
     void OnPaint(wxPaintEvent &);
     void OnClick(wxMouseEvent &event);
 

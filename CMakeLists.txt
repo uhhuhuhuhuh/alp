@@ -8,6 +8,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+set(wxBUILD_SHARED OFF CACHE BOOL "Build wxWidgets statically" FORCE)
+
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
@@ -19,6 +24,17 @@ option(ALP_NATIVE_OPTIMIZATIONS "Optimize for the build machine's CPU" ON)
 if(ALP_NATIVE_OPTIMIZATIONS)
     target_compile_options(alp_build_options INTERFACE
         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-march=native>
+    )
+endif()
+
+option(ALP_STATIC_RUNTIME "Statically link runtime libraries" OFF)
+if(ALP_STATIC_RUNTIME)
+    target_link_options(alp_build_options INTERFACE
+        $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
+            -static
+            -static-libgcc
+            -static-libstdc++
+        >
     )
 endif()
 
@@ -54,11 +70,6 @@ endif()
 option(ALP_BUILD_CAS "Build the Compare Against Stockfish tool" OFF)
 if(ALP_BUILD_CAS OR ALP_BUILD_ALL)
     add_subdirectory(tools/cas)
-endif()
-
-option(ALP_BUILD_GAMES "Build the Games tool" OFF)
-if(ALP_BUILD_GAMES OR ALP_BUILD_ALL)
-    add_subdirectory(tools/games)
 endif()
 
 option(ALP_BUILD_GEN_ATK "Build the gen atk tool" OFF)

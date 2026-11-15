@@ -229,7 +229,6 @@ void chess::gen_pawn_moves_bulk(Position &pos, MoveStack<> &moves, const LegalCt
         captures_right = (pawns & ~bb::files[File::A]) >> 9;
     }
     bb::U64 captures = captures_left | captures_right;
-    pos.st->pawn_ctrl |= captures;
     captures &= enemy;
 
     bb::U64 capture_quiets = captures & ~promotion_rank;

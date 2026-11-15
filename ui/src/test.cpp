@@ -68,12 +68,10 @@ TestDialog::TestDialog(wxWindow *parent)
 
 void TestDialog::add_test_result(const TestResult &result) {
     wxVector<wxVariant> row;
-
-    row.push_back(wxString::FromUTF8(result.test.fen));
+    row.push_back(wxString::FromUTF8(std::string(result.test.fen)));
     row.push_back(wxString::Format("%d", result.test.depth));
     row.push_back(wxString::Format("%llu", result.test.nodes));
     row.push_back(wxString::Format("%llu", result.nodes));
     row.push_back(result.is_successful ? "PASS" : "FAIL");
-
     list->AppendItem(row);
 }

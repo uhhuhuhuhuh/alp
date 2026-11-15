@@ -134,56 +134,19 @@ inline static BackwardPassed get_backward_passed(const Position &pos, Color colo
     };
 }
 
-constexpr int MAX_PHASE = 24;
-
 enum class GamePhase { middlegame, endgame };
 
 static int8_t count_pieces(const Position &pos, PieceType type) {
     return popcount(pos.bb.get(type)[Color::white]) + popcount(pos.bb.get(type)[Color::black]);
 }
 
-static int32_t calculate_game_phase(const Position &pos) {
+static int32_t calculate_game_phase(const Position &pos, const Engine::EvalSettings &eval) {
     int32_t phase = 0;
-
     phase += 4 * count_pieces(pos, PieceType::queen);
     phase += 2 * count_pieces(pos, PieceType::rook);
     phase += count_pieces(pos, PieceType::bishop);
     phase += count_pieces(pos, PieceType::knight);
-
-    return std::min(phase, MAX_PHASE);
-}
-
-static int32_t evaluate_piece_sqr(
-    const Position &pos, Color perspective, const PieceArray<Engine::PieceSquareTables> &pst
-) {
-    int32_t mg_score = 0;
-    int32_t eg_score = 0;
-
-    for (Color color : {Color::white, Color::black}) {
-        const int sign = (color == perspective) ? 1 : -1;
-
-        for (PieceType type :
-             {PieceType::pawn,
-              PieceType::knight,
-              PieceType::bishop,
-              PieceType::rook,
-              PieceType::queen,
-              PieceType::king}) {
-            bb::U64 pieces = pos.bb.get(type)[color];
-
-            while (pieces) {
-                const sqr_t sqr = poplsb(pieces);
-                const sqr_t rel_sqr_ = rel_sqr(sqr, color);
-
-                mg_score += sign * pst[type].middlegame[rel_sqr_];
-                eg_score += sign * pst[type].endgame[rel_sqr_];
-            }
-        }
-    }
-
-    const int phase = calculate_game_phase(pos);
-
-    return (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
+    return std::min(phase, eval.max_phase);
 }
 
 static bool has_bishop_pair(const Position &pos, Color color) {
@@ -193,11 +156,11 @@ static bool has_bishop_pair(const Position &pos, Color color) {
 
 static int32_t king_shield(const Position &pos, Color color, const Engine::EvalSettings &eval) {
     int32_t score = 0;
-    Piece pawn(PieceType::pawn, Color::white);
+    const Piece pawn(PieceType::pawn, Color::white);
 
-    file_t king_file = lsb(pos.bb.get(PieceType::king)[color]) % 8;
-    rank_t start_pawn_rank = color == Color::white ? 1 : 6;
-    rank_t push_pawn_rank = color == Color::white ? 2 : 5;
+    const file_t king_file = lsb(pos.bb.get(PieceType::king)[color]) % 8;
+    const rank_t start_pawn_rank = color == Color::white ? 1 : 6;
+    const rank_t push_pawn_rank = color == Color::white ? 2 : 5;
     std::array<file_t, 3> files;
     if (king_file > File::E) {
         files = {File::F, File::G, File::H};
@@ -225,37 +188,63 @@ static inline int32_t returning_bishop(const Position &pos, Color color) {
     return 0;
 }
 
-static inline int32_t eval_bishop(
-    const Position &pos, sqr_t sqr, int32_t phase, int32_t &king_attackers_count,
-    int32_t &king_attackers_weights, const Engine::EvalSettings &eval
-) {
+struct EvalPiecesCtx {
+    bb::U64 occ;
+    bb::U64 king_ring;
+    bb::U64 attacks_mask;
+    int32_t king_attackers_count = 0;
+    int32_t king_attackers_weights = 0;
+    int32_t phase;
+};
+
+static inline int32_t
+eval_knight(const Position &pos, sqr_t sqr, EvalPiecesCtx &ctx, const Engine::EvalSettings &eval) {
     int32_t score = 0;
     Color color = pos.board[sqr].color;
 
-    const bb::U64 occ = pos.bb.occupancy();
-    bb::U64 attacks = bb::get_bishop_attack(sqr, occ);
-    attacks &= ~pos.bb.every_type()[color] | ~pos.st->pawn_ctrl;
+    bb::U64 attacks = bb::knight_attacks[sqr] & ctx.attacks_mask;
+    uint8_t mobility = popcount(attacks);
+    int8_t mg_mobility =
+        eval.mg_knight_mobility_multiplier * (mobility - eval.mobility_0_knight_penalty);
+    int8_t eg_mobility =
+        eval.eg_knight_mobility_multiplier * (mobility - eval.mobility_0_knight_penalty);
+
+    score +=
+        (mg_mobility * ctx.phase + eg_mobility * (eval.max_phase - ctx.phase)) / eval.max_phase;
+
+    bb::U64 king_atks_bb = attacks & ctx.king_ring;
+    uint8_t king_atks_count = popcount(king_atks_bb);
+    ctx.king_attackers_count += king_atks_count;
+    ctx.king_attackers_weights += eval.knight_king_attackers_weight * king_atks_count;
+
+    return score;
+}
+
+static inline int32_t
+eval_bishop(const Position &pos, sqr_t sqr, EvalPiecesCtx &ctx, const Engine::EvalSettings &eval) {
+    int32_t score = 0;
+    Color color = pos.board[sqr].color;
+
+    bb::U64 attacks = bb::get_bishop_attack(sqr, ctx.occ) & ctx.attacks_mask;
     uint8_t mobility = popcount(attacks);
     int8_t mg_mobility =
         eval.mg_bishop_mobility_multiplier * (mobility - eval.mobility_0_bishop_penalty);
     int8_t eg_mobility =
         eval.eg_bishop_mobility_multiplier * (mobility - eval.mobility_0_bishop_penalty);
 
-    score += (mg_mobility * phase + eg_mobility * (MAX_PHASE - phase)) / MAX_PHASE;
+    score +=
+        (mg_mobility * ctx.phase + eg_mobility * (eval.max_phase - ctx.phase)) / eval.max_phase;
 
-    assert(poplsb(pos.bb.get(PieceType::king)[!color]) == 1);
-    bb::U64 king_atks_bb = attacks & bb::near_sqrs[lsb(pos.bb.get(PieceType::king)[!color])];
+    bb::U64 king_atks_bb = attacks & ctx.king_ring;
     uint8_t king_atks_count = popcount(king_atks_bb);
-    king_attackers_count += king_atks_count;
-    king_attackers_weights += eval.bishop_king_attackers_weight * king_atks_count;
+    ctx.king_attackers_count += king_atks_count;
+    ctx.king_attackers_weights += eval.bishop_king_attackers_weight * king_atks_count;
 
     return score;
 }
 
-static inline int32_t eval_rook(
-    const Position &pos, sqr_t sqr, int32_t phase, int32_t &king_attackers_count,
-    int32_t &king_attackers_weights, const Engine::EvalSettings &eval
-) {
+static inline int32_t
+eval_rook(const Position &pos, sqr_t sqr, EvalPiecesCtx &ctx, const Engine::EvalSettings &eval) {
     int32_t score = 0;
     Color color = pos.board[sqr].color;
 
@@ -283,94 +272,101 @@ static inline int32_t eval_rook(
         }
     }
 
-    const bb::U64 occ = pos.bb.occupancy();
-    bb::U64 attacks = bb::get_rook_attack(sqr, occ);
-    attacks &= ~pos.bb.every_type()[color] | ~pos.st->pawn_ctrl;
+    bb::U64 attacks = bb::get_rook_attack(sqr, ctx.occ) & ctx.attacks_mask;
     mobility += popcount(attacks);
     mg_mobility += eval.mg_rook_mobility_multiplier * (mobility - eval.mobility_0_rook_penalty);
     eg_mobility += eval.eg_rook_mobility_multiplier * (mobility - eval.mobility_0_rook_penalty);
 
-    score += (mg_mobility * phase + eg_mobility * (MAX_PHASE - phase)) / MAX_PHASE;
+    score +=
+        (mg_mobility * ctx.phase + eg_mobility * (eval.max_phase - ctx.phase)) / eval.max_phase;
 
-    assert(poplsb(pos.bb.get(PieceType::king)[!color]) == 1);
-    bb::U64 king_atks_bb = attacks & bb::near_sqrs[lsb(pos.bb.get(PieceType::king)[!color])];
+    bb::U64 king_atks_bb = attacks & ctx.king_ring;
     uint8_t king_atks_count = popcount(king_atks_bb);
-    king_attackers_count += king_atks_count;
-    king_attackers_weights += eval.rook_king_attackers_weight * king_atks_count;
+    ctx.king_attackers_count += king_atks_count;
+    ctx.king_attackers_weights += eval.rook_king_attackers_weight * king_atks_count;
 
     return score;
 }
 
-static inline int32_t eval_queen(
-    const Position &pos, sqr_t sqr, int32_t phase, int32_t &king_attackers_count,
-    int32_t &king_attackers_weights, const Engine::EvalSettings &eval
-) {
+static inline int32_t
+eval_queen(const Position &pos, sqr_t sqr, EvalPiecesCtx &ctx, const Engine::EvalSettings &eval) {
     int32_t score = 0;
-    Color color = pos.board[sqr].color;
+    const Color color = pos.board[sqr].color;
 
-    struct Undeveloped {
-        sqr_t rel_sqr;
-        PieceType type;
-        Undeveloped(sqr_t rel_sqr, PieceType type) : rel_sqr(rel_sqr), type(type) {}
-    };
-    rank_t rank = sqr / 8;
+    const rank_t rank = sqr / 8;
     if ((color == Color::white && rank > 1) || (color == Color::black && rank < 6)) {
-        for (const auto &undeveloped : {
-                 Undeveloped{b1, PieceType::knight},
-                 Undeveloped{c1, PieceType::bishop},
-                 Undeveloped{f1, PieceType::bishop},
-                 Undeveloped{g1, PieceType::knight},
-        }) {
-            if (pos.board[rel_sqr(undeveloped.rel_sqr, color)] == Piece{undeveloped.type, color})
+        const auto undeveloped = [&](sqr_t sqr, PieceType type) {
+            if (pos.board[rel_sqr(sqr, color)] == Piece{type, color})
                 score -= eval.early_developed_queen_penalty;
-        }
+        };
+        undeveloped(b1, PieceType::knight);
+        undeveloped(c1, PieceType::bishop);
+        undeveloped(f1, PieceType::bishop);
+        undeveloped(g1, PieceType::knight);
     }
 
-    const bb::U64 occ = pos.bb.occupancy();
-    bb::U64 attacks = bb::get_rook_attack(sqr, occ) | bb::get_bishop_attack(sqr, occ);
-    attacks &= ~pos.bb.every_type()[color] | ~pos.st->pawn_ctrl;
+    bb::U64 attacks = (bb::get_rook_attack(sqr, ctx.occ) | bb::get_bishop_attack(sqr, ctx.occ)) &
+                      ctx.attacks_mask;
     uint8_t mobility = popcount(attacks);
     int8_t mg_mobility =
         eval.mg_queen_mobility_multiplier * (mobility - eval.mobility_0_queen_penalty);
     int8_t eg_mobility =
         eval.eg_queen_mobility_multiplier * (mobility - eval.mobility_0_queen_penalty);
 
-    score += (mg_mobility * phase + eg_mobility * (MAX_PHASE - phase)) / MAX_PHASE;
+    score +=
+        (mg_mobility * ctx.phase + eg_mobility * (eval.max_phase - ctx.phase)) / eval.max_phase;
 
-    assert(poplsb(pos.bb.get(PieceType::king)[!color]) == 1);
-    bb::U64 king_atks_bb = attacks & bb::near_sqrs[lsb(pos.bb.get(PieceType::king)[!color])];
+    bb::U64 king_atks_bb = attacks & ctx.king_ring;
     uint8_t king_atks_count = popcount(king_atks_bb);
-    king_attackers_count += king_atks_count;
-    king_attackers_weights += eval.queen_king_attackers_weight * king_atks_count;
+    ctx.king_attackers_count += king_atks_count;
+    ctx.king_attackers_weights += eval.queen_king_attackers_weight * king_atks_count;
 
     return score;
 }
 
 static inline int32_t
-eval_pieces(const Position &pos, Color color, const Engine::EvalSettings &eval) {
+eval_pieces(const Position &pos, Color perspective, const Engine::EvalSettings &eval) {
     int32_t score = 0;
 
-    int32_t phase = calculate_game_phase(pos);
+    const Color enemy = !perspective;
+    bb::U64 pawns = pos.bb.get(PieceType::pawn)[enemy];
+    bb::U64 captures_left;
+    bb::U64 captures_right;
+    if (perspective == Color::white) {
+        captures_left = (pawns & ~bb::files[File::A]) << 7;
+        captures_right = (pawns & ~bb::files[File::H]) << 9;
+    } else {
+        captures_left = (pawns & ~bb::files[File::H]) >> 7;
+        captures_right = (pawns & ~bb::files[File::A]) >> 9;
+    }
+    bb::U64 pawn_ctrl = captures_left | captures_right;
+    EvalPiecesCtx ctx = {
+        .occ = pos.bb.occupancy(),
+        .king_ring = bb::near_sqrs[lsb(pos.bb.get(PieceType::king)[enemy])],
+        .attacks_mask = ~(pos.bb.every_type()[enemy] | pawn_ctrl),
+        .phase = calculate_game_phase(pos, eval)
+    };
 
     int32_t king_attackers_count = 0;
     int32_t king_attackers_weights = 0;
+    int32_t mg_score = 0;
+    int32_t eg_score = 0;
 
-    bb::U64 occ = pos.bb.every_type()[color] & ~pos.bb.get(PieceType::pawn)[color];
+    bb::U64 occ = pos.bb.every_type()[perspective];
     while (occ != 0) {
         sqr_t sqr = poplsb(occ);
-        switch (pos.board[sqr].type) {
-        case PieceType::bishop:
-            score +=
-                eval_bishop(pos, sqr, phase, king_attackers_count, king_attackers_weights, eval);
-            break;
-        case PieceType::rook:
-            score += eval_rook(pos, sqr, phase, king_attackers_count, king_attackers_weights, eval);
-            break;
-        case PieceType::queen:
-            score +=
-                eval_queen(pos, sqr, phase, king_attackers_count, king_attackers_weights, eval);
-            break;
-        default: break;
+        const Piece piece = pos.board[sqr];
+        const PieceType type = piece.type;
+        const sqr_t rel_sqr_ = rel_sqr(sqr, perspective);
+        mg_score += eval.pst[type].middlegame[rel_sqr_];
+        eg_score += eval.pst[type].endgame[rel_sqr_];
+
+        switch (type) {
+        case PieceType::knight: score += eval_knight(pos, sqr, ctx, eval); break;
+        case PieceType::bishop: score += eval_bishop(pos, sqr, ctx, eval); break;
+        case PieceType::rook:   score += eval_rook(pos, sqr, ctx, eval); break;
+        case PieceType::queen:  score += eval_queen(pos, sqr, ctx, eval); break;
+        default:                break;
         }
     }
 
@@ -378,7 +374,9 @@ eval_pieces(const Position &pos, Color color, const Engine::EvalSettings &eval) 
     int32_t mg_king_danger = king_danger * king_danger / 4096;
     int32_t eg_king_danger = king_danger / 16;
 
-    score += (mg_king_danger * phase + eg_king_danger * (MAX_PHASE - phase)) / MAX_PHASE;
+    score += (mg_score * ctx.phase + eg_score * (eval.max_phase - ctx.phase)) / eval.max_phase;
+    score += (mg_king_danger * ctx.phase + eg_king_danger * (eval.max_phase - ctx.phase)) /
+             eval.max_phase;
 
     return score;
 }
@@ -388,14 +386,14 @@ int32_t chess::Engine::evaluate(const EvalSettings &eval) const {
     const Color color = pos.st->active_color;
     const Color enemy = !color;
 
-    const auto &adj =
+    const auto adj =
         [&](int32_t val, const std::array<int32_t, 9> &adj, PieceType type) -> int32_t {
         return ((val + adj[popcount(pos.bb.get(PieceType::pawn)[color])]) *
                 popcount(pos.bb.get(type)[color])) -
                ((val + adj[popcount(pos.bb.get(PieceType::pawn)[enemy])]) *
                 popcount(pos.bb.get(type)[enemy]));
     };
-    const auto &popcount_diff = [&](PieceType type) -> int32_t {
+    const auto popcount_diff = [&](PieceType type) -> int32_t {
         return popcount(pos.bb.get(type)[color]) - popcount(pos.bb.get(type)[enemy]);
     };
 
@@ -428,8 +426,6 @@ int32_t chess::Engine::evaluate(const EvalSettings &eval) const {
     score += eval.returning_bishop_bonus * get_diff(returning_bishop);
     score += get_diff(eval_pieces, eval);
 
-    score += evaluate_piece_sqr(pos, color, eval.pst);
-
     return score;
 }
 
@@ -456,7 +452,6 @@ chess::Move chess::Engine::get_tt_move(SearchContext &ctx) {
     if (auto *entry = tt.probe(pos.st->hash)) {
         if (entry->key == pos.st->hash) return entry->best_move;
     }
-
     return Move::none();
 }
 
@@ -493,11 +488,9 @@ struct SeeState {
 static SeeState make_see_state(const Position &pos) {
     SeeState state{};
     state.occupied = pos.bb.occupancy();
-
     for (Color color : {Color::white, Color::black}) {
         for (PieceType type : SEE_ORDER) { state.get(type, color) = pos.bb.get(type)[color]; }
     }
-
     return state;
 }
 
@@ -508,7 +501,6 @@ static bb::U64 attackers_to(const SeeState &state, sqr_t sqr, Color by) {
     const bb::U64 rooks = state.get(PieceType::rook, by);
     const bb::U64 queens = state.get(PieceType::queen, by);
     const bb::U64 kings = state.get(PieceType::king, by);
-
     return (bb::pawn_attacks[!by][sqr] & pawns) | (bb::knight_attacks[sqr] & knights) |
            (bb::king_attacks[sqr] & kings) |
            (bb::get_bishop_attack(sqr, state.occupied) & (bishops | queens)) |
@@ -580,7 +572,6 @@ int32_t chess::Engine::static_exchange_eval(
     state.occupied |= target_bb;
 
     Color side = them;
-
     while (depth + 1 < static_cast<int>(gain.size())) {
         const bb::U64 attackers = attackers_to(state, target, side);
 
@@ -618,7 +609,7 @@ int32_t chess::Engine::static_exchange_eval(
             if (attackers_to(after, target, !side)) break;
         }
 
-        ++depth;
+        depth++;
         gain[depth] = move_piece_value(occupant, eval) + promotion_bonus - gain[depth - 1];
 
         state.get(occupant, !side) &= ~target_bb;
@@ -634,10 +625,7 @@ int32_t chess::Engine::static_exchange_eval(
         side = !side;
     }
 
-    while (depth > 0) {
-        gain[depth - 1] = -std::max(-gain[depth - 1], gain[depth]);
-        --depth;
-    }
+    for (; depth > 0; depth--) { gain[depth - 1] = -std::max(-gain[depth - 1], gain[depth]); }
 
     return gain[0];
 }

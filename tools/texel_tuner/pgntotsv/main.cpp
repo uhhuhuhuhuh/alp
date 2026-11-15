@@ -2,7 +2,6 @@
 #include "fen_pos.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -15,7 +14,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace {
 
@@ -33,7 +31,7 @@ struct Options {
 
 struct PgnGame {
     std::unordered_map<std::string, std::string> headers;
-    std::vector<std::string> san_moves;
+    std::string movetext;
 };
 
 struct Stats {
@@ -44,75 +42,60 @@ struct Stats {
     std::uint64_t positions_written = 0;
 };
 
+constexpr bool is_white(char c) noexcept {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
 std::string_view trim_view(std::string_view s) {
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
-        s.remove_prefix(1);
-    }
-
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) { s.remove_suffix(1); }
-
+    while (!s.empty() && is_white(static_cast<unsigned char>(s.front()))) { s.remove_prefix(1); }
+    while (!s.empty() && is_white(static_cast<unsigned char>(s.back()))) { s.remove_suffix(1); }
     return s;
 }
 
 bool is_blank(std::string_view s) {
     for (unsigned char c : s) {
-        if (!std::isspace(c)) return false;
+        if (!is_white(c)) return false;
     }
-
     return true;
 }
 
 std::optional<int> parse_int(std::string_view s) {
     int value{};
-
     const char *begin = s.data();
     const char *end = begin + s.size();
-
     auto [ptr, ec] = std::from_chars(begin, end, value);
-
     if (ec != std::errc{} || ptr != end) return std::nullopt;
-
     return value;
 }
 
 std::optional<double> parse_double(std::string_view s) {
     double value{};
-
     const char *begin = s.data();
     const char *end = begin + s.size();
-
     auto [ptr, ec] = std::from_chars(begin, end, value, std::chars_format::general);
-
     if (ec != std::errc{} || ptr != end || !std::isfinite(value)) return std::nullopt;
-
     return value;
 }
 
 std::optional<int> parse_rating(const PgnGame &game, const char *color) {
     auto it = game.headers.find(std::string(color) + "Elo");
-
     if (it == game.headers.end()) return std::nullopt;
-
     return parse_int(it->second);
 }
 
 std::optional<double> parse_base_time(const PgnGame &game) {
     auto it = game.headers.find("TimeControl");
-
     if (it == game.headers.end() || it->second.empty() || it->second == "-") {
         return std::nullopt;
     }
 
     std::string_view first_period(it->second);
-
     first_period = first_period.substr(0, first_period.find(':'));
 
     const auto slash = first_period.rfind('/');
-
     if (slash != std::string_view::npos) first_period.remove_prefix(slash + 1);
 
     const auto plus = first_period.find('+');
-
     if (plus != std::string_view::npos) first_period = first_period.substr(0, plus);
 
     return parse_double(first_period);
@@ -124,25 +107,19 @@ bool passes_filters(const PgnGame &game, const Options &o) {
 
     if (o.min_rating || o.max_rating) {
         if (!white || !black) return false;
-
         if (o.min_rating && std::min(*white, *black) < *o.min_rating) { return false; }
-
         if (o.max_rating && std::max(*white, *black) > *o.max_rating) { return false; }
     }
 
     if (o.time_control) {
         auto it = game.headers.find("TimeControl");
-
         if (it == game.headers.end() || it->second != *o.time_control) { return false; }
     }
 
     if (o.min_base_time || o.max_base_time) {
         const auto base = parse_base_time(game);
-
         if (!base) return false;
-
         if (o.min_base_time && *base < *o.min_base_time) return false;
-
         if (o.max_base_time && *base > *o.max_base_time) return false;
     }
 
@@ -151,26 +128,20 @@ bool passes_filters(const PgnGame &game, const Options &o) {
 
 bool parse_header_line(std::string_view line, std::string &key, std::string &value) {
     const std::string_view s = trim_view(line);
-
     if (s.size() < 4 || s.front() != '[' || s.back() != ']') return false;
 
     std::size_t p = 1;
-
-    while (p < s.size() && std::isspace(static_cast<unsigned char>(s[p]))) { ++p; }
+    while (p < s.size() && is_white(static_cast<unsigned char>(s[p]))) { p++; }
 
     const std::size_t key_begin = p;
-
-    while (p < s.size() && !std::isspace(static_cast<unsigned char>(s[p]))) { ++p; }
-
+    while (p < s.size() && !is_white(static_cast<unsigned char>(s[p]))) { p++; }
     if (p == key_begin) return false;
 
     key.assign(s.data() + key_begin, p - key_begin);
 
-    while (p < s.size() && std::isspace(static_cast<unsigned char>(s[p]))) { ++p; }
-
+    while (p < s.size() && is_white(static_cast<unsigned char>(s[p]))) { p++; }
     if (p >= s.size() || s[p] != '"') return false;
-
-    ++p;
+    p++;
 
     value.clear();
 
@@ -188,155 +159,149 @@ bool parse_header_line(std::string_view line, std::string &key, std::string &val
     return false;
 }
 
-// Append one already-delimited movetext token.
-// Returns false after encountering a game result token.
-bool append_movetext_token(std::string_view token, std::vector<std::string> &tokens) {
-    if (token.empty()) return true;
+enum class TokenResult { continue_parsing, end_movetext, stop };
 
-    if (token == "1-0" || token == "0-1" || token == "1/2-1/2" || token == "*") { return false; }
+template <typename Callback>
+TokenResult append_movetext_token(std::string_view token, Callback &&callback) {
+    if (token.empty()) { return TokenResult::continue_parsing; }
 
-    // Remove move-number prefixes such as:
-    // 1.e4
-    // 1...e5
-    if (std::isdigit(static_cast<unsigned char>(token.front()))) {
-        std::size_t pos = 0;
-
-        while (pos < token.size() && std::isdigit(static_cast<unsigned char>(token[pos]))) {
-            ++pos;
-        }
-
-        const std::size_t digits_end = pos;
-
-        while (pos < token.size() && token[pos] == '.') ++pos;
-
-        if (pos > digits_end) token.remove_prefix(pos);
+    // Game result.
+    if (token == "1-0" || token == "0-1" || token == "1/2-1/2" || token == "*") {
+        return TokenResult::end_movetext;
     }
 
-    if (token.empty() || token.front() == '$') return true;
+    // Remove move-number prefixes:
+    // 1.e4
+    // 1...e5
+    if (token.front() >= '0' && token.front() <= '9') {
+        std::size_t pos = 0;
+        while (pos < token.size() && token[pos] >= '0' && token[pos] <= '9') { ++pos; }
+        const std::size_t digits_end = pos;
+        while (pos < token.size() && token[pos] == '.') { ++pos; }
+        if (pos > digits_end) { token.remove_prefix(pos); }
+    }
+
+    if (token.empty() || token.front() == '$') { return TokenResult::continue_parsing; }
 
     if (token == "!" || token == "?" || token == "!!" || token == "??" || token == "!?" ||
         token == "?!") {
-        return true;
+        return TokenResult::continue_parsing;
     }
 
-    if (token == "e.p." || token == "ep") return true;
+    if (token == "e.p." || token == "ep") { return TokenResult::continue_parsing; }
 
-    tokens.emplace_back(token);
-
-    return true;
+    return callback(token) ? TokenResult::continue_parsing : TokenResult::stop;
 }
 
-// Single-pass scanner over the original movetext.
-// Avoids building a second cleaned string and avoids istringstream.
-std::vector<std::string> tokenize_movetext(std::string_view text) {
-    std::vector<std::string> tokens;
-
-    tokens.reserve(std::min<std::size_t>(text.size() / 16, 4096));
-
+template <typename Callback>
+bool for_each_movetext_token(std::string_view text, Callback &&callback) {
     std::size_t token_begin = std::string_view::npos;
 
     unsigned variation_depth = 0;
 
     bool brace_comment = false;
     bool line_comment = false;
+
     bool keep_reading = true;
+    bool callback_stopped = false;
 
-    auto flush_token = [&](std::size_t end) {
-        if (token_begin == std::string_view::npos || !keep_reading) return;
+    auto flush_token = [&](std::size_t end) -> bool {
+        if (token_begin == std::string_view::npos) { return true; }
 
-        keep_reading = append_movetext_token(text.substr(token_begin, end - token_begin), tokens);
+        const auto token = text.substr(token_begin, end - token_begin);
 
         token_begin = std::string_view::npos;
+
+        const TokenResult result = append_movetext_token(token, callback);
+        switch (result) {
+        case TokenResult::continue_parsing: return true;
+        case TokenResult::end_movetext:     keep_reading = false; return true;
+        case TokenResult::stop:
+            callback_stopped = true;
+            keep_reading = false;
+            return false;
+        }
+
+        return true;
     };
 
     for (std::size_t i = 0; i < text.size() && keep_reading; ++i) {
         const char c = text[i];
 
         if (line_comment) {
-            if (c == '\n') line_comment = false;
-
+            if (c == '\n') { line_comment = false; }
             continue;
         }
 
         if (brace_comment) {
-            if (c == '}') brace_comment = false;
-
+            if (c == '}') { brace_comment = false; }
             continue;
         }
 
         if (variation_depth != 0) {
-            if (c == '(') ++variation_depth;
-            else if (c == ')')
-                --variation_depth;
-
+            if (c == '(') {
+                variation_depth++;
+            } else if (c == ')') {
+                variation_depth--;
+            }
             continue;
         }
 
         if (c == ';' || c == '{' || c == '(') {
-            flush_token(i);
-
-            if (!keep_reading) break;
-
-            if (c == ';') line_comment = true;
-            else if (c == '{')
+            if (!flush_token(i)) { break; }
+            if (!keep_reading) { break; }
+            if (c == ';') {
+                line_comment = true;
+            } else if (c == '{') {
                 brace_comment = true;
-            else
+            } else {
                 variation_depth = 1;
-
+            }
             continue;
         }
 
-        if (std::isspace(static_cast<unsigned char>(c))) {
-            flush_token(i);
+        if (is_white(c)) {
+            if (!flush_token(i)) { break; }
             continue;
         }
 
-        if (token_begin == std::string_view::npos) token_begin = i;
+        if (token_begin == std::string_view::npos) { token_begin = i; }
     }
 
-    if (keep_reading && token_begin != std::string_view::npos) flush_token(text.size());
+    if (keep_reading && token_begin != std::string_view::npos) { flush_token(text.size()); }
 
-    return tokens;
+    return !callback_stopped;
 }
 
 template <typename callback_fn> void read_pgn(std::istream &in, callback_fn &&callback) {
     PgnGame current;
 
-    std::string movetext;
-    movetext.reserve(16 * 1024);
+    current.movetext.reserve(16 * 1024);
 
     std::string line;
 
     bool have_content = false;
-
     auto finish = [&]() -> bool {
-        if (!have_content) return true;
-
-        current.san_moves = tokenize_movetext(movetext);
-
-        movetext.clear();
-
+        if (!have_content) { return true; }
         const bool keep_reading = callback(std::move(current));
-
         current = PgnGame{};
+        current.movetext.reserve(16 * 1024);
         have_content = false;
-
         return keep_reading;
     };
 
     while (std::getline(in, line)) {
         std::string key, value;
-
         if (parse_header_line(line, key, value)) {
-            if (!current.headers.empty() && !movetext.empty()) {
-                if (!finish()) return;
+            if (!current.headers.empty() && !current.movetext.empty()) {
+                if (!finish()) { return; }
             }
 
             current.headers[key] = value;
             have_content = true;
         } else if (!is_blank(line)) {
-            movetext.append(line);
-            movetext.push_back('\n');
+            current.movetext.append(line);
+            current.movetext.push_back('\n');
 
             have_content = true;
         }
@@ -360,7 +325,7 @@ struct ParsedSan {
     chess::PieceType piece = chess::PieceType::pawn;
     chess::PieceType promotion = chess::PieceType::none;
 
-    int destination = -1; // a1 = 0, h8 = 63
+    int destination = -1;
     int source_file = -1;
     int source_rank = -1;
 
@@ -374,7 +339,6 @@ bool parse_san(std::string_view token, ParsedSan &out) {
     // Remove trailing check, mate, and annotation markers.
     while (!token.empty()) {
         const char c = token.back();
-
         if (c == '+' || c == '#' || c == '!' || c == '?') token.remove_suffix(1);
         else
             break;
@@ -383,8 +347,7 @@ bool parse_san(std::string_view token, ParsedSan &out) {
     // Some sources append the optional en-passant marker.
     if (token.size() >= 4 && token.substr(token.size() - 4) == "e.p.") {
         token.remove_suffix(4);
-
-        while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back()))) {
+        while (!token.empty() && is_white(static_cast<unsigned char>(token.back()))) {
             token.remove_suffix(1);
         }
     }
@@ -405,7 +368,6 @@ bool parse_san(std::string_view token, ParsedSan &out) {
     // Promotion suffix: =Q, =R, =B, or =N.
     if (token.size() >= 2 && token[token.size() - 2] == '=') {
         out.promotion = san_piece_type(token.back());
-
         if (out.promotion != chess::PieceType::queen && out.promotion != chess::PieceType::rook &&
             out.promotion != chess::PieceType::bishop &&
             out.promotion != chess::PieceType::knight) {
@@ -467,14 +429,13 @@ bool parse_san(std::string_view token, ParsedSan &out) {
 }
 
 bool san_move_is_capture(const std::array<chess::Piece, 64> &board, const chess::Move &move) {
-    const int from = static_cast<int>(move.from());
-    const int to = static_cast<int>(move.to());
+    const int from = static_cast<int>(move.from);
+    const int to = static_cast<int>(move.to);
 
     if (from < 0 || from >= 64 || to < 0 || to >= 64) { return false; }
 
     if (board[to].type != chess::PieceType::none) return true;
 
-    // En passant: pawn moves diagonally to an empty square.
     return board[from].type == chess::PieceType::pawn && (from % 8) != (to % 8);
 }
 
@@ -483,7 +444,6 @@ bool san_to_move(chess::Engine &engine, std::string_view token, chess::Move &res
 
     if (!parse_san(token, san)) return false;
 
-    // Direct access to the board: no FEN formatting or reparsing.
     const auto &board = engine.position().board;
 
     const auto &legal_moves = engine.gen_legal_moves();
@@ -491,8 +451,8 @@ bool san_to_move(chess::Engine &engine, std::string_view token, chess::Move &res
     bool found = false;
 
     for (const chess::Move &move : legal_moves) {
-        const int from = static_cast<int>(move.from());
-        const int to = static_cast<int>(move.to());
+        const int from = static_cast<int>(move.from);
+        const int to = static_cast<int>(move.to);
 
         if (from < 0 || from >= 64 || to < 0 || to >= 64) { continue; }
 
@@ -508,18 +468,13 @@ bool san_to_move(chess::Engine &engine, std::string_view token, chess::Move &res
             if (king_side != san.castle_king_side) continue;
         } else {
             if (to != san.destination || moving.type != san.piece) { continue; }
-
             if (san.source_file != -1 && from % 8 != san.source_file) { continue; }
-
             if (san.source_rank != -1 && from / 8 != san.source_rank) { continue; }
-
-            if (move.promotion_type() != san.promotion) continue;
+            if (move.promotion_type != san.promotion) continue;
 
             if (san_move_is_capture(board, move) != san.capture) continue;
         }
 
-        // Legal move generation plus SAN disambiguation should identify
-        // exactly one move. Reject ambiguity instead of guessing.
         if (found) return false;
 
         result = move;
@@ -531,12 +486,9 @@ bool san_to_move(chess::Engine &engine, std::string_view token, chess::Move &res
 
 bool parse_game_position(chess::Engine &engine, const PgnGame &game) {
     const auto fen = game.headers.find("FEN");
-
     if (fen != game.headers.end()) {
         return engine.parse_fen(fen->second) == chess::Position::FenParseErr::ok;
     }
-
-    // Do not overwrite a custom FEN with the starting position.
     return engine.parse_fen(chess::fen::starting_pos) == chess::Position::FenParseErr::ok;
 }
 
@@ -549,7 +501,6 @@ void process_game(
     const std::string result = result_it == game.headers.end() ? "*" : result_it->second;
 
     double white_score;
-
     if (result == "1-0") {
         white_score = 1.0;
     } else if (result == "1/2-1/2") {
@@ -561,6 +512,7 @@ void process_game(
         return;
     }
 
+    // Filter before tokenizing movetext.
     if (!passes_filters(game, options)) {
         stats.games_filtered++;
         return;
@@ -568,38 +520,34 @@ void process_game(
 
     if (!parse_game_position(engine, game)) {
         stats.games_filtered++;
-
         std::cerr << "Warning: skipping game with invalid starting FEN.\n";
-
         return;
     }
 
     std::uint64_t ply = 0;
 
-    for (const std::string &san : game.san_moves) {
+    const bool success = for_each_movetext_token(game.movetext, [&](std::string_view san) -> bool {
         chess::Move move;
-
         if (!san_to_move(engine, san, move)) {
-            ++stats.games_filtered;
-
             std::cerr << "Warning: skipping game; could not resolve SAN move: " << san << '\n';
 
-            return;
+            return false;
         }
 
         engine.do_move(move);
-
         stats.positions_seen++;
         ply++;
-
         if (ply % options.step == 0) {
             output << engine.position().format_as_fen() << '\t' << white_score << '\n';
-
             stats.positions_written++;
         }
+        return true;
+    });
+    if (!success) {
+        stats.games_filtered++;
+        return;
     }
-
-    ++stats.games_processed;
+    stats.games_processed++;
 }
 
 void print_usage(const char *program) {
@@ -624,7 +572,6 @@ bool parse_options(int argc, char **argv, Options &o) {
             std::cerr << "Missing value for " << option << '\n';
             return std::nullopt;
         }
-
         return std::string(argv[++i]);
     };
 
@@ -635,31 +582,23 @@ bool parse_options(int argc, char **argv, Options &o) {
 
         if (arg == "-o" || arg == "--output") {
             auto v = need_value(i, arg.c_str());
-
             if (!v) return false;
-
             o.output = *v;
         } else if (arg == "--time-control") {
             auto v = need_value(i, arg.c_str());
-
             if (!v) return false;
-
             o.time_control = *v;
         } else if (
             arg == "--game-limit" || arg == "--step" || arg == "--min-rating" ||
             arg == "--max-rating"
         ) {
             auto v = need_value(i, arg.c_str());
-
             if (!v) return false;
-
             auto n = parse_int(*v);
-
             if (!n) {
                 std::cerr << "Invalid integer for " << arg << '\n';
                 return false;
             }
-
             if (arg == "--game-limit") o.game_limit = *n;
             else if (arg == "--step")
                 o.step = *n;
@@ -669,16 +608,12 @@ bool parse_options(int argc, char **argv, Options &o) {
                 o.max_rating = *n;
         } else if (arg == "--min-base-time" || arg == "--max-base-time") {
             auto v = need_value(i, arg.c_str());
-
             if (!v) return false;
-
             auto n = parse_double(*v);
-
             if (!n) {
                 std::cerr << "Invalid number for " << arg << '\n';
                 return false;
             }
-
             if (arg == "--min-base-time") o.min_base_time = *n;
             else
                 o.max_base_time = *n;
@@ -698,16 +633,11 @@ bool parse_options(int argc, char **argv, Options &o) {
 
 void print_progress(std::uint64_t bytes_read, std::uint64_t total_bytes, const Stats &stats) {
     constexpr int bar_width = 40;
-
     double progress =
         total_bytes > 0 ? std::min(1.0, static_cast<double>(bytes_read) / total_bytes) : 0.0;
-
     int filled = static_cast<int>(progress * bar_width);
-
     std::cerr << '\r' << '[';
-
     for (int i = 0; i < bar_width; ++i) std::cerr << (i < filled ? '#' : '-');
-
     std::cerr << "] " << std::fixed << std::setprecision(1) << (progress * 100.0) << "% "
               << std::defaultfloat << "| Games: " << stats.games_examined
               << " | Games Processed: " << stats.games_processed
@@ -718,56 +648,42 @@ void print_progress(std::uint64_t bytes_read, std::uint64_t total_bytes, const S
 
 int main(int argc, char **argv) {
     Options options;
-
     if (!parse_options(argc, argv, options)) {
         print_usage(argv[0]);
         return 1;
     }
 
     std::ifstream input(options.input, std::ios::binary);
-
     if (!input) {
         std::cerr << "Could not open input PGN: " << options.input << '\n';
-
         return 1;
     }
 
     std::ofstream output(options.output);
-
     if (!output) {
         std::cerr << "Could not open output TSV: " << options.output << '\n';
-
         return 1;
     }
 
     const std::uint64_t total_bytes = std::filesystem::file_size(options.input);
-
     Stats stats;
-
     auto last_update = std::chrono::steady_clock::now();
-
     chess::Engine engine;
-
     read_pgn(input, [&](PgnGame &&game) {
         if (options.game_limit &&
             stats.games_processed >= static_cast<std::uint64_t>(*options.game_limit)) {
             return false;
         }
-
-        ++stats.games_examined;
+        stats.games_examined++;
 
         process_game(engine, game, options, output, stats);
 
         const auto now = std::chrono::steady_clock::now();
-
         if (now - last_update >= std::chrono::milliseconds(250)) {
             const auto position = input.tellg();
-
             const std::uint64_t bytes_read =
                 position >= 0 ? static_cast<std::uint64_t>(position) : total_bytes;
-
             print_progress(bytes_read, total_bytes, stats);
-
             last_update = now;
         }
 
@@ -779,11 +695,9 @@ int main(int argc, char **argv) {
 
     const std::uint64_t bytes_read =
         position >= 0 ? static_cast<std::uint64_t>(position) : total_bytes;
-
     print_progress(bytes_read, total_bytes, stats);
 
     std::cerr << '\n';
-
     std::cout << "Games examined: " << stats.games_examined << '\n'
               << "Games filtered out: " << stats.games_filtered << '\n'
               << "Games processed: " << stats.games_processed << '\n'

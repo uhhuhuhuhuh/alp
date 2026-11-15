@@ -58,6 +58,7 @@ class Frame : public wxFrame {
     PerftTextBox *m_perft_txt_box;
     wxButton *m_eval_btn;
     wxButton *m_engine_move_btn;
+    wxButton *m_flip_board_btn;
 
     chess::Engine &m_engine;
     chess::GameEnd m_game_end;
@@ -109,6 +110,7 @@ class Frame : public wxFrame {
     void parse_fen(std::string_view fen) {
         if (!handle_fen_parse_err(m_engine.parse_fen(fen))) { return; }
         const auto &moves = m_engine.gen_legal_moves();
+        m_board->m_prev_move = {.from = -1, .to = -1};
         m_board->clear_selection();
         m_board->Refresh();
         handle_game_end(m_engine.pos.get_game_end(moves));
@@ -172,6 +174,12 @@ class Frame : public wxFrame {
         std::cout << "Depth Went: " << results.depth << ", Nodes: " << results.nodes << '\n';
     }
 
+    void flip_board(wxCommandEvent &) {
+        m_board->m_persp = !m_board->m_persp;
+        m_board->clear_selection();
+        m_board->Refresh();
+    }
+
     void OnPaint(wxPaintEvent &) {
         wxPaintDC dc(m_panel);
         m_alp.draw(dc);
@@ -223,6 +231,9 @@ class Frame : public wxFrame {
 
         m_engine_move_btn = new wxButton(m_panel, wxID_ANY, "Engine Move", wxPoint(625, 325));
         m_engine_move_btn->Bind(wxEVT_BUTTON, &Frame::engine_move, this);
+
+        m_flip_board_btn = new wxButton(m_panel, wxID_ANY, "Flip Board", wxPoint(635, 365));
+        m_flip_board_btn->Bind(wxEVT_BUTTON, &Frame::flip_board, this);
 
         constexpr int boardPanelSize = ChessBoard::BOARD_SIZE + ChessBoard::BORDER * 2;
         m_board =
